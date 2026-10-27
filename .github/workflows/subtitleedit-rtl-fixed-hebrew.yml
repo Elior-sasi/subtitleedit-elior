@@ -142,8 +142,12 @@ jobs:
           for ($i = 0; $i -lt 40 -and -not $ready; $i++) { try { Invoke-RestMethod 'http://127.0.0.1:18099/healthz' | Out-Null; $ready = $true } catch { Start-Sleep 1 } }
           if (-not $ready) { Get-Content "$env:RUNNER_TEMP/mfa-ci.err" -ErrorAction SilentlyContinue; throw 'Cloud MFA CI service did not start.' }
           try {
-            dotnet test tests/UI/UITests.csproj -c Release --filter "FullyQualifiedName~OstTableTests|FullyQualifiedName~FrameNudgeGapTests|FullyQualifiedName~PlayheadFrameStepTests|FullyQualifiedName~FfmpegFrameIndexTests|FullyQualifiedName~VideoFrameHistoryTests|FullyQualifiedName~PlayerDiagnosticsTests" --logger "console;verbosity=normal" --logger "trx;LogFileName=ost.trx" --results-directory "$env:RUNNER_TEMP/test-results"
+            dotnet test tests/UI/UITests.csproj -c Release --filter "(FullyQualifiedName~OstTableTests|FullyQualifiedName~FrameNudgeGapTests|FullyQualifiedName~PlayheadFrameStepTests|FullyQualifiedName~FfmpegFrameIndexTests|FullyQualifiedName~VideoFrameHistoryTests|FullyQualifiedName~PlayerDiagnosticsTests)&FullyQualifiedName!~HebrewMenuPunctuationFollowsTextWhileMenuAndShortcutsStayInPlace" --logger "console;verbosity=normal" --logger "trx;LogFileName=ost.trx" --results-directory "$env:RUNNER_TEMP/test-results"
             if ($LASTEXITCODE -ne 0) { throw "UI tests failed ($LASTEXITCODE)." }
+            # Run the native AccessText caret assertion in a fresh Avalonia process. It
+            # remains mandatory, with original assertions and no automatic retries.
+            dotnet test tests/UI/UITests.csproj -c Release --no-build --filter "FullyQualifiedName~HebrewMenuPunctuationFollowsTextWhileMenuAndShortcutsStayInPlace" --logger "console;verbosity=normal" --logger "trx;LogFileName=bidi.trx" --results-directory "$env:RUNNER_TEMP/test-results"
+            if ($LASTEXITCODE -ne 0) { throw "Isolated bidi regression failed ($LASTEXITCODE)." }
           } finally { Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue }
 
       - name: Report failed tests as annotations

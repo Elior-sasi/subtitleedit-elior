@@ -909,17 +909,10 @@ public partial class OstTableTests
             Assert.Equal(FlowDirection.RightToLeft, presenter.FlowDirection);
             var text = presenter.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.AccessText>().Single();
             Assert.Equal(FlowDirection.RightToLeft, text.FlowDirection);
-            // Test bidi ordering on one fully laid-out line, independently of the popup's
-            // previously measured shared columns. Measuring alone leaves AccessText with
-            // its old arranged width; wrapping can place the first and last glyphs on
-            // different lines when another test has enlarged menu text.
-            text.InvalidateMeasure();
-            text.Measure(Size.Infinity);
-            text.Arrange(new Rect(text.DesiredSize));
+            text.Measure(new Size(500, 100));
             var start = text.TextLayout.HitTestTextPosition(0);
             var lastDot = text.TextLayout.HitTestTextPosition(label.Length - 1);
-            Assert.True(lastDot.X < start.X,
-                $"The trailing dots must appear to the left of Hebrew text: start={start}, dot={lastDot}, size={text.Bounds.Size}.");
+            Assert.True(lastDot.X < start.X, "The trailing dots must appear to the left of Hebrew text.");
             Assert.Equal(label, hebrew.Header);
             Assert.Equal(FlowDirection.LeftToRight, menu.FlowDirection);
             Assert.Equal(FlowDirection.LeftToRight, hebrew.FlowDirection);
