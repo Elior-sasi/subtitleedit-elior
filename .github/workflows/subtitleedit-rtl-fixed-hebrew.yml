@@ -1,0 +1,329 @@
+name: Build Subtitle Edit RTL Hebrew OST
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/subtitleedit-rtl-fixed-hebrew.yml'
+      - 'tools/subtitleedit-rtl-fixed/**'
+      - 'tools/auto_upstream.py'
+  workflow_dispatch:
+  schedule:
+    - cron: "23 */6 * * *"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: custom-build-main
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+      numeric: ${{ steps.version.outputs.numeric }}
+      upstream_sha: ${{ steps.version.outputs.upstream_sha }}
+      build: ${{ steps.version.outputs.build }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Test release selection and version preparation
+        run: python3 -m unittest discover -s tools -p test_auto_upstream.py -v
+      - name: Resolve newest published official release, including betas and RCs
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/auto_upstream.py resolve
+
+  cloud-mfa-service:
+    needs: resolve
+    if: needs.resolve.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+      - name: Test cloud MFA service, retention, deploy guards (fake engine; real MFA runs are documented separately)
+        working-directory: tools/subtitleedit-rtl-fixed/cloud-mfa
+        run: |
+          python3 -m unittest discover -s service/tests -t service -p 'test_*.py' -v
+          python3 -m unittest discover -s . -p 'test_setup.py' -v
+          bash -n setup.sh service/deploy/deploy.sh
+
+  build:
+    needs: [resolve, cloud-mfa-service]
+    runs-on: windows-latest
+    timeout-minutes: 35
+    permissions:
+      contents: write
+      actions: read
+
+    steps:
+      - name: Checkout custom files
+        uses: actions/checkout@v5
+        with:
+          path: custom
+          fetch-depth: 1
+
+      - name: Checkout Subtitle Edit
+        uses: actions/checkout@v5
+        with:
+          repository: SubtitleEdit/subtitleedit
+          ref: ${{ needs.resolve.outputs.upstream_sha }}
+          path: subtitleedit
+          fetch-depth: 1
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Prepare installer version for selected upstream
+        shell: pwsh
+        run: python ./custom/tools/auto_upstream.py prepare --root ./custom --tag "${{ needs.resolve.outputs.tag }}"
+
+      - name: Apply RTL layout fix
+        shell: pwsh
+        working-directory: subtitleedit
+        run: |
+          $path = 'src/ui/Features/Main/MainHelpers/RightToLeftHelper.cs'
+          $source = Get-Content $path -Raw
+          $needle = '            MirrorTextEditGrid(grid, flowDirection);'
+          if (([regex]::Matches($source, [regex]::Escape($needle))).Count -ne 1) { throw 'RTL patch target changed upstream.' }
+          $source = $source.Replace($needle, '            // RTL fixed: keep edit controls in their normal positions.')
+          Set-Content $path $source -Encoding utf8
+
+      - name: Apply Hebrew line-break rules
+        shell: pwsh
+        working-directory: subtitleedit
+        run: ..\custom\tools\subtitleedit-rtl-fixed\apply-hebrew-breaks.ps1
+
+      - name: Integrate native OST toolbar tool
+        shell: pwsh
+        working-directory: subtitleedit
+        run: ..\custom\tools\subtitleedit-rtl-fixed\ost\apply-ost.ps1
+
+      - name: Integrate reviewed script-to-subtitles workflow
+        shell: pwsh
+        working-directory: subtitleedit
+        run: ..\custom\tools\subtitleedit-rtl-fixed\ost\apply-script-import.ps1
+
+      - name: Use our custom update channel
+        shell: pwsh
+        working-directory: subtitleedit
+        run: ..\custom\tools\subtitleedit-rtl-fixed\ost\apply-custom-updates.ps1
+
+      - name: Add player lifecycle diagnostics (logging only)
+        shell: pwsh
+        working-directory: subtitleedit
+        run: ..\custom\tools\subtitleedit-rtl-fixed\ost\apply-player-diagnostics.ps1
+
+      - name: Restore
+        shell: pwsh
+        working-directory: subtitleedit
+        run: dotnet restore
+
+      - name: Test OST regressions
+        shell: pwsh
+        working-directory: subtitleedit
+        run: |
+          # The protocol service (real API, fake engine double) must run inside this step:
+          # Windows runners stop processes started by an earlier step when that step ends.
+          $token = 'ci_' + [guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N')
+          $env:SUBS_IL_MFA_TEST_TOKEN = $token
+          $env:SUBS_IL_MFA_TEST_URL = 'http://127.0.0.1:18099'
+          $server = Start-Process python -PassThru -ArgumentList @('../custom/tools/subtitleedit-rtl-fixed/cloud-mfa/service/tests/ci_fake_server.py', '18099', $token) -RedirectStandardOutput "$env:RUNNER_TEMP/mfa-ci.out" -RedirectStandardError "$env:RUNNER_TEMP/mfa-ci.err"
+          $ready = $false
+          for ($i = 0; $i -lt 40 -and -not $ready; $i++) { try { Invoke-RestMethod 'http://127.0.0.1:18099/healthz' | Out-Null; $ready = $true } catch { Start-Sleep 1 } }
+          if (-not $ready) { Get-Content "$env:RUNNER_TEMP/mfa-ci.err" -ErrorAction SilentlyContinue; throw 'Cloud MFA CI service did not start.' }
+          try {
+            dotnet test tests/UI/UITests.csproj -c Release --filter "FullyQualifiedName~OstTableTests|FullyQualifiedName~FrameNudgeGapTests|FullyQualifiedName~PlayheadFrameStepTests|FullyQualifiedName~FfmpegFrameIndexTests|FullyQualifiedName~VideoFrameHistoryTests|FullyQualifiedName~PlayerDiagnosticsTests" --logger "console;verbosity=normal" --logger "trx;LogFileName=ost.trx" --results-directory "$env:RUNNER_TEMP/test-results"
+            if ($LASTEXITCODE -ne 0) { throw "UI tests failed ($LASTEXITCODE)." }
+          } finally { Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue }
+
+      - name: Report failed tests as annotations
+        if: failure()
+        shell: pwsh
+        run: |
+          $trx = Get-ChildItem "$env:RUNNER_TEMP/test-results" -Filter '*.trx' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $trx) { Write-Host '::error title=No test results::Tests did not produce a TRX file (build or discovery failure).'; exit 0 }
+          [xml]$x = Get-Content $trx.FullName
+          $failed = @($x.TestRun.Results.UnitTestResult | Where-Object { $_.outcome -ne 'Passed' -and $_.outcome -ne 'NotExecuted' })
+          Write-Host "Failed tests: $($failed.Count)"
+          foreach ($f in $failed | Select-Object -First 9) {
+            $msg = ($f.Output.ErrorInfo.Message + ' | ' + $f.Output.ErrorInfo.StackTrace) -replace "[`r`n]+", ' ' -replace '::', ': '
+            if ($msg.Length -gt 900) { $msg = $msg.Substring(0, 900) }
+            Write-Host "::error title=$($f.testName)::$msg"
+          }
+
+      - name: Verify official script timing engine
+        shell: pwsh
+        run: ./custom/tools/subtitleedit-rtl-fixed/ost/test-script-engine.ps1
+
+      - name: Get libmpv
+        shell: pwsh
+        working-directory: subtitleedit
+        run: |
+          $workflow = Get-Content '.github/workflows/build-ui.yml' -Raw
+          $m = [regex]::Match($workflow, 'https://github\.com/SubtitleEdit/support-files/releases/download/[^"\r\n]+/libmpv2-win64\.zip')
+          if (-not $m.Success) { throw 'Could not locate libmpv URL.' }
+          Invoke-WebRequest -Uri $m.Value -OutFile 'libmpv2-win64.zip'
+          Expand-Archive 'libmpv2-win64.zip' 'libmpv-temp' -Force
+
+      - name: Bundle official GitHub authentication helper
+        shell: pwsh
+        working-directory: subtitleedit
+        run: |
+          $version = '2.102.1'
+          $asset = "gh_${version}_windows_amd64.zip"
+          $base = "https://github.com/cli/cli/releases/download/v$version"
+          Invoke-WebRequest "$base/$asset" -OutFile $asset
+          Invoke-WebRequest "$base/gh_${version}_checksums.txt" -OutFile 'gh-checksums.txt'
+          $line = Get-Content 'gh-checksums.txt' | Where-Object { $_ -match ([regex]::Escape($asset) + '$') }
+          if (@($line).Count -ne 1) { throw 'Cannot locate GitHub CLI checksum.' }
+          $expected = ($line -split '\s+')[0]
+          if ((Get-FileHash $asset -Algorithm SHA256).Hash -ne $expected) { throw 'GitHub CLI checksum failed.' }
+          Expand-Archive $asset 'gh-temp' -Force
+          $exe = Get-ChildItem 'gh-temp' -Filter 'gh.exe' -Recurse -File | Select-Object -First 1
+          if (-not $exe) { throw 'GitHub CLI executable missing.' }
+          New-Item -ItemType Directory -Path './publish/compact/custom-updater' -Force | Out-Null
+          Copy-Item $exe.FullName './publish/compact/custom-updater/gh.exe'
+          $license = Get-ChildItem 'gh-temp' -Filter 'LICENSE*' -Recurse -File | Select-Object -First 1
+          if ($license) { Copy-Item $license.FullName './publish/compact/custom-updater/GitHub-CLI-LICENSE.txt' }
+
+      - name: Verify private artifact download and digest
+        shell: pwsh
+        working-directory: subtitleedit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $gh = (Resolve-Path './publish/compact/custom-updater/gh.exe').Path
+          $listing = & $gh api 'repos/Elior-sasi/subtitleedit-elior/actions/artifacts?per_page=100' | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read private artifact metadata.' }
+          $meta = $listing.artifacts | Where-Object { -not $_.expired -and $_.name -like 'SE-*RTL-Hebrew-OST*' -and $_.digest -like 'sha256:*' } | Select-Object -First 1
+          if (-not $meta) { Write-Host 'No prior artifact; download smoke test will run on the next build.'; exit 0 }
+          $artifactId = $meta.id
+          $info = [Diagnostics.ProcessStartInfo]::new($gh)
+          $info.UseShellExecute = $false
+          $info.RedirectStandardOutput = $true
+          $info.RedirectStandardError = $true
+          $info.ArgumentList.Add('api')
+          $info.ArgumentList.Add("repos/Elior-sasi/subtitleedit-elior/actions/artifacts/$artifactId/zip")
+          $process = [Diagnostics.Process]::Start($info)
+          $errorRead = $process.StandardError.ReadToEndAsync()
+          $stream = [IO.File]::Create((Join-Path (Get-Location) 'private-download-smoke.zip'))
+          try { $process.StandardOutput.BaseStream.CopyTo($stream) } finally { $stream.Dispose() }
+          $process.WaitForExit()
+          if ($process.ExitCode -ne 0) { throw 'Private artifact download failed.' }
+          $actual = (Get-FileHash 'private-download-smoke.zip' -Algorithm SHA256).Hash
+          if ($actual -ne ($meta.digest -replace '^sha256:', '')) { throw 'Private artifact digest mismatch.' }
+          Remove-Item 'private-download-smoke.zip'
+          Write-Host 'Private download bytes match the GitHub artifact SHA-256.'
+
+      - name: Publish compact Windows x64 build
+        shell: pwsh
+        working-directory: subtitleedit
+        run: |
+          dotnet publish src/ui/UI.csproj -c Release -r win-x64 --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:DebugSymbols=false `
+            -p:DebugType=none `
+            -p:Version=${{ needs.resolve.outputs.numeric }} `
+            -p:FileVersion=${{ needs.resolve.outputs.numeric }} `
+            -p:InformationalVersion=${{ needs.resolve.outputs.version }}-RTL-Hebrew-OST `
+            -o ./publish/compact
+          Copy-Item 'libmpv-temp/*' './publish/compact/' -Recurse -Force
+          Get-ChildItem './publish/compact' -Filter '*.pdb' -Recurse -File | Remove-Item -Force
+          Remove-Item './publish/compact/libse.xml' -Force -ErrorAction SilentlyContinue
+          Copy-Item './LICENSE' './publish/compact/LICENSE' -Force
+          $notes = Get-Content '../custom/tools/subtitleedit-rtl-fixed/release-notes.json' -Raw | ConvertFrom-Json
+          if ($notes.upstream -ne '${{ needs.resolve.outputs.tag }}' -or $notes.changes.Count -eq 0) { throw 'Custom release notes do not match upstream.' }
+          @{ run_id = [long]$env:GITHUB_RUN_ID; channel = 'Elior-sasi/subtitleedit-elior/main'; upstream = '${{ needs.resolve.outputs.tag }}'; upstream_commit = '${{ needs.resolve.outputs.upstream_sha }}'; commit = $env:GITHUB_SHA; built_at = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'); changes = @($notes.changes) } |
+            ConvertTo-Json | Set-Content './publish/compact/custom-build.json' -Encoding utf8
+          if (-not (Test-Path './publish/compact/custom-updater/gh.exe')) { throw 'Authentication helper missing from package.' }
+          if (Test-Path './publish/compact/Settings.json') { throw 'Settings.json must never be included in an update.' }
+          if (Test-Path './publish/compact/CloudMfa') { throw 'Cloud alignment settings or tokens must never be included in an update.' }
+
+
+      - name: Package
+        shell: pwsh
+        working-directory: subtitleedit
+        run: |
+          $zip = './SE-${{ needs.resolve.outputs.version }}-RTL-Hebrew-OST-AutoUpdate.zip'
+          Compress-Archive './publish/compact/*' $zip -Force
+          $size = (Get-Item $zip).Length
+          Write-Host "ZIP bytes: $size"
+          if ($size -ge 209715200) { throw "ZIP is 200 MiB or larger: $size" }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [IO.Compression.ZipFile]::OpenRead((Resolve-Path $zip))
+          try {
+            $names = @($archive.Entries | ForEach-Object { $_.FullName.Replace([char]92, [char]47) })
+            $forbidden = @($names | Where-Object { $_ -match '(?i)(^|[\\/])(Settings[^\\/]*\.json|CloudMfa[\\/].*|.*\.dpapi|.*\.(srt|ass|ssa|vtt|ostproject|sework\.json|wav|mp4|mkv))$' })
+            if ($forbidden.Count -gt 0) { throw "Forbidden user files in package: $($forbidden -join ', ')" }
+            foreach ($required in @('SubtitleEdit.exe', 'custom-build.json', 'custom-updater/gh.exe')) { if ($names -notcontains $required) { throw "Package is missing $required" } }
+            $manifestEntry = $archive.GetEntry('custom-build.json')
+            $reader = [IO.StreamReader]::new($manifestEntry.Open()); $manifest = $reader.ReadToEnd() | ConvertFrom-Json; $reader.Dispose()
+            if ($manifest.commit -ne $env:GITHUB_SHA -or $manifest.run_id -ne [long]$env:GITHUB_RUN_ID -or $manifest.channel -ne 'Elior-sasi/subtitleedit-elior/main') { throw 'Package manifest does not match this build.' }
+          } finally { $archive.Dispose() }
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash
+          "$hash  $(Split-Path $zip -Leaf)" | Set-Content './SE-${{ needs.resolve.outputs.version }}-RTL-Hebrew-OST-AutoUpdate.sha256' -Encoding ascii
+          Write-Host "Package entries, manifest and private channel verified. SHA256: $hash"
+
+      - name: Build custom Windows installer
+        shell: pwsh
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup --no-progress -y
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot install Inno Setup.' }
+          }
+          if (-not (Test-Path $iscc)) {
+            $iscc = (Get-ChildItem ${env:ProgramFiles(x86)} -Filter 'ISCC.exe' -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like '*Inno Setup*' } | Select-Object -First 1).FullName
+          }
+          if (-not $iscc -or -not (Test-Path $iscc)) { throw 'Inno Setup compiler missing.' }
+          $payload = (Resolve-Path './subtitleedit/publish/compact').Path
+          $script = (Resolve-Path './custom/tools/subtitleedit-rtl-fixed/installer/SubtitleEditElior.iss').Path
+          & $iscc "/DPayload=$payload" "/DBuildId=$env:GITHUB_RUN_ID" $script
+          if ($LASTEXITCODE -ne 0) { throw 'Custom installer compilation failed.' }
+          ./custom/tools/subtitleedit-rtl-fixed/installer/test-installer.ps1
+
+      - name: Publish and verify private custom release downloads
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./custom/tools/subtitleedit-rtl-fixed/publish-private-build.ps1
+
+      - name: Upload artifact
+        continue-on-error: true
+        uses: actions/upload-artifact@v5
+        with:
+          name: SE-${{ needs.resolve.outputs.version }}-RTL-Hebrew-OST-AutoUpdate
+          path: subtitleedit/SE-${{ needs.resolve.outputs.version }}-RTL-Hebrew-OST-AutoUpdate.zip
+          compression-level: 0
+          retention-days: 30
+
+      - name: Upload tested custom installer
+        continue-on-error: true
+        uses: actions/upload-artifact@v5
+        with:
+          name: SubtitleEdit-Elior-${{ needs.resolve.outputs.version }}-Setup
+          path: custom/tools/subtitleedit-rtl-fixed/installer/output/SubtitleEdit-Elior-${{ needs.resolve.outputs.version }}-Setup.exe
+          compression-level: 0
+          retention-days: 30
+
+      - name: Upload synthetic director export fixtures
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v5
+        with:
+          name: DirectorQuestions-Export-Smoke
+          path: director-export-smoke/*
+          if-no-files-found: error
+          retention-days: 7
+
+

@@ -1,0 +1,8 @@
+**/bin/
+**/obj/
+**/output/
+**/publish/
+**/__pycache__/
+Settings*.json
+*.dpapi
+.env

@@ -1,0 +1,23 @@
+[
+  {
+    "id": "english_mfa",
+    "label": "English - MFA english_mfa 3.1.0",
+    "available": true,
+    "verified": "Real English speech (LibriSpeech/Common Voice samples from the MFA repository): cue boundaries matched per-recording MFA alignment within about 10 ms, except a 30 ms filler word. Not verified on film audio with music or overlapping speakers.",
+    "engine_version": "3.4.3",
+    "mfa_bin": "/opt/conda/envs/mfa/bin/mfa",
+    "acoustic": "/models/english_mfa_acoustic_3.1.0.zip",
+    "acoustic_label": "english_mfa acoustic v3.1.0 (CC BY 4.0)",
+    "dictionary": "/models/english_mfa_3.1.0.dict",
+    "dictionary_label": "english_mfa dictionary v3.1.0 (CC BY 4.0)",
+    "g2p": "/models/english_us_mfa_g2p_3.0.0.zip",
+    "g2p_label": "english_us_mfa G2P v3.0.0 (CC BY 4.0)"
+  },
+  {
+    "id": "hebrew",
+    "label": "עברית",
+    "available": false,
+    "reason": "אין ל-MFA מודל אקוסטי, מילון הגייה או מודל G2P רשמיים לעברית (נבדק בקטלוג mfa-models, 2026-10-25). נדרשים קורפוס הקלטות עבריות מתומללות ברישיון מתאים, מילון הגייה ואימון מודל עם mfa train."
+  }
+]
+

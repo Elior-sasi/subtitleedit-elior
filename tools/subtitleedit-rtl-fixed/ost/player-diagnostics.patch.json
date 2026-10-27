@@ -1,0 +1,172 @@
+{
+ "edits": [
+  {
+   "file": "src/ui/Logic/VideoPlayers/LibMpvDynamic/LibMpvDynamicPlayer.cs",
+   "mode": "after",
+   "anchor": "    private volatile bool _coreInitialized;\n",
+   "text": "\n    // Custom build: player lifecycle diagnostics (see PlayerDiagnostics). Cached state only -\n    // logging never calls into the core, so it cannot block on a busy core itself.\n    private readonly long _diagId = Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.NewPlayerId();\n    private int _diagLoadSeq;\n    private int _diagMpvMessages;\n    private volatile int _diagIdleActive = -1;\n    private volatile int _diagLoadsInFlight;\n    private const ulong ObserveIdIdleActive = 6;\n    private const int MPV_EVENT_START_FILE = 6;\n    private const int MPV_EVENT_END_FILE = 7;\n    private const int MPV_EVENT_FILE_LOADED = 8;\n    private static readonly byte[] PropertyNameIdleActive = GetUtf8Bytes(\"idle-active\");\n\n    /// <summary>Diagnostics id of this player instance (custom build).</summary>\n    public long DiagnosticsId => _diagId;\n\n    /// <summary>One-line cached state for the diagnostics log. Never touches the core.</summary>\n    internal string DiagnosticsState()\n    {\n        var thread = _eventThread;\n        return $\"p={_diagId} disposed={_disposed} core={_coreInitialized} mpv={(_mpv != IntPtr.Zero)} \" +\n               $\"loop={_eventLoopActive} loopAlive={(thread?.IsAlive ?? false)} idle={_diagIdleActive} \" +\n               $\"pauseCache={_observedPause} dur={Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.N(BitConverter.Int64BitsToDouble(Interlocked.Read(ref _observedDurationBits)))} \" +\n               $\"loadsInFlight={_diagLoadsInFlight} pending={(_pendingLoadFileName != null)} file={Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.MediaTag(_fileName)}\";\n    }\n\n    private void DiagMpvEvent(MpvEvent mpvEvent)\n    {\n        try\n        {\n            switch (mpvEvent.eventId)\n            {\n                case MPV_EVENT_START_FILE:\n                    Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"mpv-evt\", $\"p={_diagId} START_FILE\");\n                    break;\n                case MPV_EVENT_FILE_LOADED:\n                    Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"mpv-evt\", $\"p={_diagId} FILE_LOADED\");\n                    break;\n                case MPV_EVENT_END_FILE:\n                    var reason = mpvEvent.data != IntPtr.Zero ? Marshal.ReadInt32(mpvEvent.data, 0) : -1;\n                    var error = mpvEvent.data != IntPtr.Zero ? Marshal.ReadInt32(mpvEvent.data, 4) : 0;\n                    Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"mpv-evt\", $\"p={_diagId} END_FILE reason={Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.EndFileReason(reason)} error={error} ({(error < 0 ? GetErrorString(error) : \"ok\")})\");\n                    break;\n                case MPV_EVENT_SHUTDOWN:\n                    Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"mpv-evt\", $\"p={_diagId} SHUTDOWN - event loop ends\");\n                    break;\n            }\n        }\n        catch\n        {\n            // diagnostics only\n        }\n    }\n\n    private void DiagMpvMessage(IntPtr data)\n    {\n        // Separate cap from the error-log forwarder (50 per core), which can be used up by\n        // harmless warnings long before a failing load says why it failed.\n        if (_diagMpvMessages >= 400)\n        {\n            return;\n        }\n\n        try\n        {\n            var message = Marshal.PtrToStructure<MpvEventLogMessage>(data);\n            var level = message.level == IntPtr.Zero ? string.Empty : Marshal.PtrToStringUTF8(message.level) ?? string.Empty;\n            if (level is not (\"fatal\" or \"error\" or \"warn\"))\n            {\n                return;\n            }\n\n            var prefix = message.prefix == IntPtr.Zero ? string.Empty : Marshal.PtrToStringUTF8(message.prefix);\n            var text = message.text == IntPtr.Zero ? string.Empty : Marshal.PtrToStringUTF8(message.text);\n            _diagMpvMessages++;\n            Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"mpv-msg\", $\"p={_diagId} [{level}] {prefix}: {Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Redact(text)}\");\n        }\n        catch\n        {\n            // diagnostics only\n        }\n    }\n"
+  },
+  {
+   "file": "src/ui/Logic/VideoPlayers/LibMpvDynamic/LibMpvDynamicPlayer.cs",
+   "mode": "replace",
+   "anchor": "                eventPtr = waitEvent(handle, 1.0);\n            }\n            catch\n            {\n                break;\n            }",
+   "text": "                eventPtr = waitEvent(handle, 1.0);\n            }\n            catch (Exception diagException)\n            {\n                Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"mpv-evt\", $\"p={_diagId} event loop ended by exception {diagException.GetType().Name}: {Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Redact(diagException.Message)}\");\n                break;\n            }"
+  },
+  {
+   "file": "src/ui/Logic/VideoPlayers/LibMpvDynamic/LibMpvDynamicPlayer.cs",
+   "mode": "before",
+   "anchor": "            if (mpvEvent.eventId == MPV_EVENT_SHUTDOWN)\n            {\n                break;\n            }",
+   "text": "            DiagMpvEvent(mpvEvent);\n"
+  },
+  {
+   "file": "src/ui/Logic/VideoPlayers/LibMpvDynamic/LibMpvDynamicPlayer.cs",
+   "mode": "before",
+   "anchor": "                    case ObserveIdTimePos:\n",
+   "text": "                    case ObserveIdIdleActive:\n                        var idle = property.format == MPV_FORMAT_FLAG && property.data != IntPtr.Zero ? Marshal.ReadInt32(property.data) : -1;\n                        if (idle != _diagIdleActive)\n                        {\n                            _diagIdleActive = idle;\n                            Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"mpv-evt\", $\"p={_diagId} idle-active={idle}\");\n                        }\n\n                        break;\n"
+  },
+  {
+   "file": "src/ui/Logic/VideoPlayers/LibMpvDynamic/LibMpvDynamicPlayer.cs",
+   "mode": "after",
+   "anchor": "        _eventLoopActive = true;\n",
+   "text": "        try\n        {\n            // Diagnostics only; failing to observe it changes nothing else.\n            _mpvObserveProperty(handle, ObserveIdIdleActive, PropertyNameIdleActive, MPV_FORMAT_FLAG);\n        }\n        catch\n        {\n            // ignore\n        }\n\n        Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"player\", $\"p={_diagId} event loop started\");\n"
+  },
+  {
+   "file": "src/ui/Logic/VideoPlayers/LibMpvDynamic/LibMpvDynamicPlayer.cs",
+   "mode": "after",
+   "anchor": "        _eventThread = null;\n        _eventLoopActive = false;\n",
+   "text": "        Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"player\", $\"p={_diagId} event loop stop requested\");\n"
+  },
+  {
+   "file": "src/ui/Logic/VideoPlayers/LibMpvDynamic/LibMpvDynamicPlayer.cs",
+   "mode": "after",
+   "anchor": "    private void ForwardMpvLogMessage(IntPtr data)\n    {\n",
+   "text": "        DiagMpvMessage(data);\n"
+  },
+  {
+   "file": "src/ui/Logic/VideoPlayers/LibMpvDynamic/LibMpvDynamicPlayer.cs",
+   "mode": "after",
+   "anchor": "    public void Dispose()\n    {\n",
+   "text": "        Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"player\", $\"Dispose {DiagnosticsState()}\");\n"
+  },
+  {
+   "file": "src/ui/Logic/VideoPlayers/LibMpvDynamic/LibMpvDynamicPlayer.cs",
+   "mode": "replace",
+   "anchor": "    public async Task LoadFile(string path, double startPositionSeconds = 0)\n    {\n        EnsureNotDisposed();\n",
+   "text": "    public async Task LoadFile(string path, double startPositionSeconds = 0)\n    {\n        var diagSeq = Interlocked.Increment(ref _diagLoadSeq);\n        var diagStart = Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Now;\n        Interlocked.Increment(ref _diagLoadsInFlight);\n        Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"load\", $\"#{diagSeq} begin media={Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.MediaTag(path)} start={Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.N(startPositionSeconds)} {DiagnosticsState()}\");\n        try\n        {\n            await LoadFileCore(path, startPositionSeconds, diagSeq);\n        }\n        catch (Exception diagException)\n        {\n            Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"load\", $\"#{diagSeq} threw {diagException.GetType().Name}: {Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Redact(diagException.Message)}\");\n            throw;\n        }\n        finally\n        {\n            Interlocked.Decrement(ref _diagLoadsInFlight);\n            Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"load\", $\"#{diagSeq} returned after {Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Now - diagStart} ms {DiagnosticsState()}\");\n        }\n    }\n\n    private async Task LoadFileCore(string path, double startPositionSeconds, int diagSeq)\n    {\n        EnsureNotDisposed();\n"
+  },
+  {
+   "file": "src/ui/Logic/VideoPlayers/LibMpvDynamic/LibMpvDynamicPlayer.cs",
+   "mode": "replace",
+   "anchor": "        await WaitForCoreInitializedAsync();\n\n        if (!_coreInitialized)\n        {\n            if (_disposed)\n            {\n                return;\n            }\n",
+   "text": "        var diagCoreWait = Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Now;\n        Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"load\", $\"#{diagSeq} waiting for core (core={_coreInitialized})\");\n        await WaitForCoreInitializedAsync();\n        Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"load\", $\"#{diagSeq} core wait done after {Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Now - diagCoreWait} ms core={_coreInitialized} disposed={_disposed}\");\n\n        if (!_coreInitialized)\n        {\n            if (_disposed)\n            {\n                Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"load\", $\"#{diagSeq} not sent: player disposed while waiting for core\");\n                return;\n            }\n"
+  },
+  {
+   "file": "src/ui/Logic/VideoPlayers/LibMpvDynamic/LibMpvDynamicPlayer.cs",
+   "mode": "before",
+   "anchor": "                Se.LogError(\"LibMpvDynamicPlayer LoadFile: mpv core not initialized yet - load of \\\"\" + path + \"\\\" deferred to core initialization\");",
+   "text": "                Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"load\", $\"#{diagSeq} not sent: deferred until the core initializes\");\n"
+  },
+  {
+   "file": "src/ui/Logic/VideoPlayers/LibMpvDynamic/LibMpvDynamicPlayer.cs",
+   "mode": "replace",
+   "anchor": "        if (DoMpvCommand(\"set\", \"pause\", \"yes\") >= 0)\n        {\n            SetObservedPause(true);\n        }\n",
+   "text": "        var diagPauseRc = DoMpvCommand(\"set\", \"pause\", \"yes\");\n        if (diagPauseRc >= 0)\n        {\n            SetObservedPause(true);\n        }\n\n        Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"load\", $\"#{diagSeq} set pause=yes rc={diagPauseRc}\");\n"
+  },
+  {
+   "file": "src/ui/Logic/VideoPlayers/LibMpvDynamic/LibMpvDynamicPlayer.cs",
+   "mode": "replace",
+   "anchor": "        var err = await Task.Run(() => DoMpvCommand(\"loadfile\", loadPath));\n        if (_disposed)\n        {\n            return;\n        }\n",
+   "text": "        // A blocked native command cannot be cancelled; the watchdog only reports it.\n        var diagCommandStart = Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Now;\n        var diagCommandDone = 0;\n        Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"load\", $\"#{diagSeq} loadfile sent media={Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.MediaTag(path)} prefixed={!string.Equals(loadPath, path, StringComparison.Ordinal)}\");\n        using var diagWatchdog = new System.Threading.Timer(_ =>\n        {\n            if (Volatile.Read(ref diagCommandDone) == 0)\n            {\n                Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"load\", $\"#{diagSeq} loadfile STILL BLOCKED after {Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Now - diagCommandStart} ms {DiagnosticsState()}\");\n            }\n        }, null, 5000, 15000);\n        var err = await Task.Run(() => DoMpvCommand(\"loadfile\", loadPath));\n        Volatile.Write(ref diagCommandDone, 1);\n        Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"load\", $\"#{diagSeq} loadfile returned rc={err} ({(err < 0 ? GetErrorString(err) : \"ok\")}) after {Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Now - diagCommandStart} ms disposed={_disposed}\");\n        if (_disposed)\n        {\n            return;\n        }\n"
+  },
+  {
+   "file": "src/ui/Logic/VideoPlayers/LibMpvDynamic/LibMpvDynamicPlayer.cs",
+   "mode": "replace",
+   "anchor": "        var err = DoMpvCommand(\"stop\");\n        if (err < 0)\n        {\n            Se.LogError(new InvalidOperationException(GetErrorString(err)), \"LibMpvDynamicPlayer CloseFile\");\n        }\n",
+   "text": "        var diagStop = Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Now;\n        Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"close\", $\"stop sent {DiagnosticsState()}\");\n        var err = DoMpvCommand(\"stop\");\n        Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"close\", $\"p={_diagId} stop returned rc={err} after {Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Now - diagStop} ms\");\n        if (err < 0)\n        {\n            Se.LogError(new InvalidOperationException(GetErrorString(err)), \"LibMpvDynamicPlayer CloseFile\");\n        }\n"
+  },
+  {
+   "file": "src/ui/Logic/VideoPlayers/LibMpvDynamic/LibMpvDynamicPlayer.cs",
+   "mode": "replace",
+   "anchor": "        var err = DoMpvCommand(\"cycle\", \"pause\");\n",
+   "text": "        var err = DoMpvCommand(\"cycle\", \"pause\");\n        Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"play\", $\"cycle pause rc={err} {DiagnosticsState()}\");\n"
+  },
+  {
+   "file": "src/ui/Logic/VideoPlayers/LibMpvDynamic/LibMpvDynamicPlayer.cs",
+   "mode": "replace",
+   "anchor": "        var err = DoMpvCommand(\"set\", \"pause\", \"no\");\n",
+   "text": "        var err = DoMpvCommand(\"set\", \"pause\", \"no\");\n        Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"play\", $\"set pause=no rc={err} {DiagnosticsState()}\");\n"
+  },
+  {
+   "file": "src/ui/Controls/VideoPlayer/VideoPlayerControl.cs",
+   "mode": "after",
+   "anchor": "        private IVideoPlayer _videoPlayerInstance;\n",
+   "text": "        private readonly long _diagId = Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.NewControlId();\n        private long _diagOpenGeneration;\n        private int _diagOpensInFlight;\n\n        /// <summary>Diagnostics id of this control (custom build).</summary>\n        internal long DiagnosticsId => _diagId;\n\n        private string DiagnosticsState() =>\n            $\"c={_diagId} disposed={IsDisposed} hasVideo={_hasVideo} openGen={System.Threading.Interlocked.Read(ref _diagOpenGeneration)} opensInFlight={_diagOpensInFlight} \" +\n            (_videoPlayerInstance is Nikse.SubtitleEdit.Logic.VideoPlayers.LibMpvDynamic.LibMpvDynamicPlayer mpv\n                ? mpv.DiagnosticsState()\n                : $\"engine={_videoPlayerInstance.GetType().Name}\");\n"
+  },
+  {
+   "file": "src/ui/Controls/VideoPlayer/VideoPlayerControl.cs",
+   "mode": "replace",
+   "anchor": "        internal async Task Open(string videoFileName, double startPositionSeconds = 0)\n        {\n            if (IsDisposed)\n            {\n                return;\n            }\n",
+   "text": "        internal async Task Open(string videoFileName, double startPositionSeconds = 0)\n        {\n            var diagGeneration = Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.NewOpenGeneration();\n            System.Threading.Interlocked.Exchange(ref _diagOpenGeneration, diagGeneration);\n            Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"open\", $\"g={diagGeneration} begin media={Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.MediaTag(videoFileName)} start={Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.N(startPositionSeconds)} {DiagnosticsState()}\");\n            if (IsDisposed)\n            {\n                Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"open\", $\"g={diagGeneration} ignored: control disposed\");\n                return;\n            }\n"
+  },
+  {
+   "file": "src/ui/Controls/VideoPlayer/VideoPlayerControl.cs",
+   "mode": "replace",
+   "anchor": "            await _videoPlayerInstance.LoadFile(videoFileName, startPositionSeconds);\n",
+   "text": "            var diagLoadStart = Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Now;\n            System.Threading.Interlocked.Increment(ref _diagOpensInFlight);\n            try\n            {\n                await _videoPlayerInstance.LoadFile(videoFileName, startPositionSeconds);\n            }\n            finally\n            {\n                System.Threading.Interlocked.Decrement(ref _diagOpensInFlight);\n            }\n\n            var diagLatest = System.Threading.Interlocked.Read(ref _diagOpenGeneration);\n            Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"open\", $\"g={diagGeneration} LoadFile awaited {Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Now - diagLoadStart} ms\" +\n                (diagLatest != diagGeneration ? $\" SUPERSEDED by g={diagLatest}\" : string.Empty) + $\" {DiagnosticsState()}\");\n"
+  },
+  {
+   "file": "src/ui/Controls/VideoPlayer/VideoPlayerControl.cs",
+   "mode": "after",
+   "anchor": "            _textBlockVideoFileName.Text = System.IO.Path.GetFileName(videoFileName);\n            UpdateVideoFileNameMaxWidth();\n",
+   "text": "            Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"open\", $\"g={diagGeneration} done duration={Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.N(Duration)} {DiagnosticsState()}\");\n"
+  },
+  {
+   "file": "src/ui/Controls/VideoPlayer/VideoPlayerControl.cs",
+   "mode": "after",
+   "anchor": "        internal void Close()\n        {\n",
+   "text": "            Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"close\", $\"control Close {DiagnosticsState()}\");\n"
+  },
+  {
+   "file": "src/ui/Controls/VideoPlayer/VideoPlayerControl.cs",
+   "mode": "after",
+   "anchor": "        internal void CloseAndDisposePlayer()\n        {\n",
+   "text": "            Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"close\", $\"CloseAndDisposePlayer {DiagnosticsState()}\");\n"
+  },
+  {
+   "file": "src/ui/Controls/VideoPlayer/VideoPlayerControl.cs",
+   "mode": "after",
+   "anchor": "            _buttonPlay.Click += (_, _) =>\n            {\n",
+   "text": "                Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"play\", $\"play button click wasPlaying={_videoPlayerInstance.IsPlaying} {DiagnosticsState()}\");\n"
+  },
+  {
+   "file": "src/ui/Features/Main/MainViewModel.cs",
+   "mode": "after",
+   "anchor": "        LibMpvDynamicPlayer.MpvPath = Se.DataFolder;\n",
+   "text": "        Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Folder = Se.DataFolder;\n        Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"session\", $\"SE {Se.Version} engine={Se.Settings.Video.VideoPlayer} customLibMpvPath={!string.IsNullOrEmpty(Se.Settings.General.LibMpvPath)} libmpvInSeFolder={(Se.Settings.General.LibMpvPath ?? string.Empty).Contains(Path.DirectorySeparatorChar + \"Subtitle Edit\" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)} undocked={AreVideoControlsUndocked}\");\n"
+  },
+  {
+   "file": "src/ui/Features/Main/MainViewModel.cs",
+   "mode": "after",
+   "anchor": "    private async Task VideoOpenFile(string videoFileName, int desiredAudioTrackId = -1, double startPositionSeconds = 0) // OpenVideoFile\n    {\n",
+   "text": "        Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"vm\", $\"VideoOpenFile media={Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.MediaTag(videoFileName)} control={GetVideoPlayerControl()?.DiagnosticsId} undocked={AreVideoControlsUndocked} fullscreen={_fullScreenVideoPlayerControl != null}\");\n"
+  },
+  {
+   "file": "src/ui/Features/Main/MainViewModel.cs",
+   "mode": "after",
+   "anchor": "    private void VideoCloseFile()\n    {\n",
+   "text": "        Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"vm\", $\"VideoCloseFile current={Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.MediaTag(_videoFileName)} control={GetVideoPlayerControl()?.DiagnosticsId}\");\n"
+  },
+  {
+   "file": "src/ui/Features/Main/MainViewModel.cs",
+   "mode": "after",
+   "anchor": "        int desiredAudioTrackId = -1,\n        long videoOffsetToRestoreMs = 0)\n    {\n",
+   "text": "        Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"vm\", $\"SubtitleOpen ext={Path.GetExtension(fileName)} givenVideo={Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.MediaTag(videoFileName)} skipLoadVideo={skipLoadVideo} current={Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.MediaTag(_videoFileName)}\");\n"
+  },
+  {
+   "file": "src/ui/Features/Main/MainViewModel.cs",
+   "mode": "after",
+   "anchor": "    private void TogglePlayPause()\n    {\n        var control = GetVideoPlayerControl();\n",
+   "text": "        Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.Log(\"play\", $\"TogglePlayPause control={control?.DiagnosticsId} disposed={control?.IsDisposed} video={Nikse.SubtitleEdit.Logic.VideoPlayers.PlayerDiagnostics.MediaTag(_videoFileName)}\");\n"
+  }
+ ]
+}
