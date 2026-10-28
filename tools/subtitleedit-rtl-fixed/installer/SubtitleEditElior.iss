@@ -7,8 +7,8 @@
 [Setup]
 AppId={{A2DD9D28-36CF-4277-B6E1-AC25F3999B61}
 AppName=Subtitle Edit — הגרסה של אליאור
-AppVersion=5.4.0.8
-AppVerName=Subtitle Edit 5.4.0-beta8 — Elior build {#BuildId}
+AppVersion=5.4.0.9
+AppVerName=Subtitle Edit 5.4.0-beta9 — Elior build {#BuildId}
 AppPublisher=Elior Sasi / Subtitle Edit contributors
 DefaultDirName={localappdata}\Programs\SubtitleEditElior
 DefaultGroupName=Subtitle Edit - Elior
@@ -16,7 +16,7 @@ PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=output
-OutputBaseFilename=SubtitleEdit-Elior-5.4.0-beta8-Setup
+OutputBaseFilename=SubtitleEdit-Elior-5.4.0-beta9-Setup
 Compression=lzma2/fast
 SolidCompression=yes
 WizardStyle=modern

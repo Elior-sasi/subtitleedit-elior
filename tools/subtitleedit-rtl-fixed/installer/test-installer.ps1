@@ -1,5 +1,5 @@
 $ErrorActionPreference = 'Stop'
-$setup = Join-Path $PSScriptRoot 'output/SubtitleEdit-Elior-5.4.0-beta8-Setup.exe'
+$setup = Join-Path $PSScriptRoot 'output/SubtitleEdit-Elior-5.4.0-beta9-Setup.exe'
 $root = Join-Path $env:RUNNER_TEMP ('SEInstallerTest-' + [guid]::NewGuid().ToString('N'))
 $old = Join-Path $root 'old'
 $target = Join-Path $root 'installed'
