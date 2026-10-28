@@ -49,6 +49,12 @@ internal static class CustomUpdateChannel
         AuthenticationRequired = false;
         var result = new UpdateCheckResult { LatestVersion = Se.Version, ChangeLogText = Description };
         if (!OperatingSystem.IsWindows()) return result;
+        var currentRunId = CurrentRunId();
+        if (currentRunId <= 0)
+        {
+            Status = "לא ניתן לעדכן בנייה ללא מזהה מותאם מאומת";
+            return result;
+        }
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(40));
         using var releases = JsonDocument.Parse(await ApiAsync(RepoApi + "/releases?per_page=100", timeout.Token));
         CustomUpdatePackage? package = null;
@@ -58,7 +64,7 @@ internal static class CustomUpdateChannel
             var match = Regex.Match(tag, @"^custom-build-(\d+)-(\d+)$");
             if (!match.Success || release.GetProperty("draft").GetBoolean()) continue;
             if (!long.TryParse(match.Groups[1].Value, out var id) || !int.TryParse(match.Groups[2].Value, out var attempt)) continue;
-            if (id <= CurrentRunId() || (package != null && id <= package.RunId)) continue;
+            if (id <= currentRunId || (package != null && id <= package.RunId)) continue;
             var commit = release.GetProperty("target_commitish").GetString() ?? "";
             var candidate = ParseReleasePackage(release.GetRawText(), id, commit, attempt);
             if (candidate == null) continue;
