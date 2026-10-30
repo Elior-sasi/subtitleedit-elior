@@ -129,6 +129,10 @@ public partial class OstTableTests
                 foreach (var skia in new[] { false, true })
                 {
                     Se.Settings.Appearance.RightToLeft = rtl;
+                    // Test an actual selection transition. AlwaysSelected otherwise
+                    // preselects row 0 as rows are inserted, before the test waveform exists.
+                    vm.SubtitleGrid.SelectionMode = SelectionMode.Multiple;
+                    vm.SubtitleGrid.SelectedItem = null;
                     vm.Subtitles.Clear();
                     var first = new SubtitleLineViewModel { Number = 1, Text = "כתובית ראשונה", StartTime = TimeSpan.FromSeconds(1), EndTime = TimeSpan.FromSeconds(3) };
                     var second = new SubtitleLineViewModel { Number = 2, Text = "כתובית שנייה", StartTime = TimeSpan.FromSeconds(4), EndTime = TimeSpan.FromSeconds(5) };
