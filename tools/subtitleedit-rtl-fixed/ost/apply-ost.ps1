@@ -364,6 +364,9 @@ $text = $text.Substring(0, $start) + $method + $text.Substring($end)
 $needle = "    private void SelectCurrentSubtitleAtPlayhead(double mediaPlayerSeconds, List<SubtitleLineViewModel> subtitle)`n    {"
 if (([regex]::Matches($text, [regex]::Escape($needle))).Count -ne 1) { throw 'Playhead selection anchor changed upstream.' }
 $text = $text.Replace($needle, $needle + "`n        if (HoldStampEndAdvanceSelection(mediaPlayerSeconds)) return;")
+$needle = "        var selectedItems = alreadyOrderedSelection ?? SubtitleGridSelectedItemsWithReference;`n        var outgoing = SelectedSubtitle;"
+if (([regex]::Matches($text, [regex]::Escape($needle))).Count -ne 1) { throw 'Waveform selection synchronization anchor changed upstream.' }
+$text = $text.Replace($needle, "        var selectedItems = alreadyOrderedSelection ?? SubtitleGridSelectedItemsWithReference;`n        RefreshWaveformSelection(selectedItems.Cast<SubtitleLineViewModel>());`n        var outgoing = SelectedSubtitle;")
 Set-Content $path $text -Encoding utf8
 
 

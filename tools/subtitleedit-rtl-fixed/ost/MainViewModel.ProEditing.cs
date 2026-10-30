@@ -20,6 +20,19 @@ namespace Nikse.SubtitleEdit.Features.Main;
 
 public partial class MainViewModel
 {
+    private void RefreshWaveformSelection(IEnumerable<SubtitleLineViewModel> selected)
+    {
+        var waveform = AudioVisualizer;
+        if (waveform == null) return;
+        var hideLayers = Se.Settings.Assa.HideLayersFromWaveform && _visibleLayers is { Count: > 0 };
+        var rows = selected.Where(row => !row.IsReferenceOnly &&
+            (!hideLayers || _visibleLayers!.Contains(row.Layer))).ToList();
+        // Replace the list so AffectsRender sees the change, even with no video tick.
+        waveform.AllSelectedParagraphs = rows;
+        waveform.SelectedParagraph = rows.FirstOrDefault();
+        waveform.InvalidateVisual();
+    }
+
     private SubtitleLineViewModel? _stampEndAdvanceTarget;
     private double _stampEndAdvanceSeconds;
 

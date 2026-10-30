@@ -6,6 +6,7 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Headless.XUnit;
+using Avalonia.Headless;
 using Avalonia.Controls;
 using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
@@ -108,6 +109,66 @@ public partial class OstTableTests
             }
         }
         finally { window.Close(); Se.Settings.Tools.AutoAdvanceOnSetEnd = old; }
+    }
+
+    [AvaloniaFact]
+    public void PausedWaveformSelectionRepaintsImmediatelyInRtlAndLtrWithBothRenderers()
+    {
+        var oldRtl = Se.Settings.Appearance.RightToLeft;
+        var services = new ServiceCollection(); services.AddSubtitleEditServices(); Locator.Services = services.BuildServiceProvider();
+        var window = new Window { Width = 1500, Height = 900 }; MainView.NextHostWindow = window;
+        var main = new MainView(); window.Content = main;
+        try
+        {
+            window.Show(); Dispatcher.UIThread.RunJobs();
+            var vm = (MainViewModel)main.DataContext!; window.SuppressSaveChangesPromptOnClose(vm);
+            var originalWaveform = vm.AudioVisualizer;
+            try
+            {
+                foreach (var rtl in new[] { false, true })
+                foreach (var skia in new[] { false, true })
+                {
+                    Se.Settings.Appearance.RightToLeft = rtl;
+                    vm.Subtitles.Clear();
+                    var first = new SubtitleLineViewModel { Number = 1, Text = "כתובית ראשונה", StartTime = TimeSpan.FromSeconds(1), EndTime = TimeSpan.FromSeconds(3) };
+                    var second = new SubtitleLineViewModel { Number = 2, Text = "כתובית שנייה", StartTime = TimeSpan.FromSeconds(4), EndTime = TimeSpan.FromSeconds(5) };
+                    vm.Subtitles.Add(first); vm.Subtitles.Add(second);
+                    var av = skia ? new Nikse.SubtitleEdit.Controls.AudioVisualizerControl.SkiaAudioVisualizer() : new Nikse.SubtitleEdit.Controls.AudioVisualizerControl.AudioVisualizer();
+                    av.WavePeaks = new Nikse.SubtitleEdit.Logic.Media.WavePeakData2(126, Enumerable.Repeat(new Nikse.SubtitleEdit.Logic.Media.WavePeak2(200, -200), 1260).ToArray());
+                    av.WaveformColor = Avalonia.Media.Colors.Green;
+                    av.WaveformSelectedColor = Avalonia.Media.Colors.Red;
+                    av.ParagraphBackground = Avalonia.Media.Color.FromArgb(40, 70, 70, 70);
+                    av.ParagraphSelectedBackground = Avalonia.Media.Color.FromArgb(150, 40, 80, 220);
+                    vm.AudioVisualizer = av;
+                    var waveformWindow = new Window { Width = 800, Height = 200, Content = av };
+                    try
+                    {
+                        waveformWindow.Show(); waveformWindow.UpdateLayout();
+                        vm.SubtitleGrid.SelectedItems?.Clear();
+                        av.SetPosition(0, vm.Subtitles.ToList(), 0, -1, new());
+                        byte[] Capture()
+                        {
+                            Dispatcher.UIThread.RunJobs(); Avalonia.Headless.AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                            using var frame = waveformWindow.CaptureRenderedFrame()!;
+                            using var stream = new MemoryStream(); frame.Save(stream, Avalonia.Media.Imaging.PngBitmapEncoderOptions.Default); return stream.ToArray();
+                        }
+                        var unselected = Capture();
+                        vm.SubtitleGrid.SelectedItem = first;
+                        Assert.Contains(first, av.AllSelectedParagraphs); // no player tick or dispatcher wait
+                        Assert.Same(first, av.SelectedParagraph);
+                        Assert.NotEqual(unselected, Capture());
+                        vm.SubtitleGrid.SelectionMode = SelectionMode.Multiple;
+                        vm.SubtitleGrid.SelectedItems!.Add(second); Dispatcher.UIThread.RunJobs();
+                        Assert.Contains(first, av.AllSelectedParagraphs); Assert.Contains(second, av.AllSelectedParagraphs);
+                        vm.SubtitleGrid.SelectedItems.Clear(); Dispatcher.UIThread.RunJobs();
+                        Assert.Empty(av.AllSelectedParagraphs); Assert.Null(av.SelectedParagraph);
+                    }
+                    finally { waveformWindow.Close(); }
+                }
+            }
+            finally { vm.AudioVisualizer = originalWaveform; }
+        }
+        finally { window.Close(); Se.Settings.Appearance.RightToLeft = oldRtl; }
     }
 
     [Fact]
