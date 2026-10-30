@@ -347,17 +347,23 @@ $replacement = @'
         _updateAudioVisualizer = true;
         if (advanceAfterStamp)
         {
-            // Resolve from the stamped row: SelectedSubtitleIndex can lag the
-            // TwoWay selection binding when a document has just been opened.
-            var index = Subtitles.IndexOf(s);
-            if (index >= 0 && index + 1 < Subtitles.Count)
-            {
-                SelectAndScrollToRowCentered(index + 1);
-            }
+            AdvanceAfterStampEnd(s, videoPositionSeconds);
         }
 '@
 $patched = $method.Replace($needle, $replacement)
 $text = $text.Substring(0, $start) + $patched + $text.Substring($end)
+# The explicit command always advances, independently of the opt-in ordinary stamp.
+$start = $text.IndexOf('    private void WaveformSetEndAndGoToNext()')
+$end = $text.IndexOf('    [RelayCommand]', $start)
+if ($start -lt 0 -or $end -lt 0) { throw 'End-and-next method anchor changed upstream.' }
+$method = $text.Substring($start, $end - $start)
+$needle = '        SelectAndScrollToRow(idx + 1);'
+if (([regex]::Matches($method, [regex]::Escape($needle))).Count -ne 1) { throw 'End-and-next selection anchor changed upstream.' }
+$method = $method.Replace($needle, '        AdvanceAfterStampEnd(s, videoPositionSeconds);')
+$text = $text.Substring(0, $start) + $method + $text.Substring($end)
+$needle = "    private void SelectCurrentSubtitleAtPlayhead(double mediaPlayerSeconds, List<SubtitleLineViewModel> subtitle)`n    {"
+if (([regex]::Matches($text, [regex]::Escape($needle))).Count -ne 1) { throw 'Playhead selection anchor changed upstream.' }
+$text = $text.Replace($needle, $needle + "`n        if (HoldStampEndAdvanceSelection(mediaPlayerSeconds)) return;")
 Set-Content $path $text -Encoding utf8
 
 

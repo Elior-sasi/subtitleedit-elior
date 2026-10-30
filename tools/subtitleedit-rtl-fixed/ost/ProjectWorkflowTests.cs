@@ -61,6 +61,55 @@ public partial class OstTableTests
         } finally { window.Close(); Se.Settings.Tools.AutoAdvanceOnSetEnd = old; }
     }
 
+    [AvaloniaFact]
+    public async Task ExplicitEndAndNextKeepsNextSelectedAtInclusivePlayheadBoundary()
+    {
+        var old = Se.Settings.Tools.AutoAdvanceOnSetEnd;
+        var services = new ServiceCollection(); services.AddSubtitleEditServices(); Locator.Services = services.BuildServiceProvider();
+        var window = new Window { Width = 1500, Height = 900 }; MainView.NextHostWindow = window;
+        var main = new MainView(); window.Content = main;
+        try
+        {
+            window.Show(); Dispatcher.UIThread.RunJobs();
+            var vm = (MainViewModel)main.DataContext!; window.SuppressSaveChangesPromptOnClose(vm);
+            var follow = typeof(MainViewModel).GetMethod("SelectCurrentSubtitleAtPlayhead", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+            var player = vm.GetVideoPlayerControl()!;
+            foreach (var autoAdvance in new[] { false, true })
+            {
+                Se.Settings.Tools.AutoAdvanceOnSetEnd = autoAdvance;
+                vm.Subtitles.Clear();
+                var first = new SubtitleLineViewModel { Number = 1, Text = "finished", StartTime = TimeSpan.Zero, EndTime = TimeSpan.FromSeconds(5) };
+                var reference = new SubtitleLineViewModel { Text = "reference", IsReferenceOnly = true };
+                var next = new SubtitleLineViewModel { Number = 2, Text = "next", StartTime = TimeSpan.FromSeconds(6), EndTime = TimeSpan.FromSeconds(8) };
+                vm.Subtitles.Add(first); vm.Subtitles.Add(reference); vm.Subtitles.Add(next);
+                vm.SubtitleGrid.SelectedItems?.Clear(); vm.SubtitleGrid.SelectedItem = first;
+                Dispatcher.UIThread.RunJobs(); Nikse.SubtitleEdit.Logic.TableViewExtras.SyncSelectedItemsWithSelection(vm.SubtitleGrid);
+                var seconds = player.Position;
+                vm.WaveformSetEndAndGoToNextCommand.Execute(null);
+                Assert.Same(next, vm.SelectedSubtitle); // selection must be synchronous
+                await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background); Dispatcher.UIThread.RunJobs();
+                var rows = vm.Subtitles.Where(r => !r.IsReferenceOnly).OrderBy(r => r.StartTime).ToList();
+                // The timer used to take the selection straight back at the stamped position.
+                follow.Invoke(vm, new object[] { seconds, rows });
+                follow.Invoke(vm, new object[] { seconds, rows });
+                Dispatcher.UIThread.RunJobs(); Assert.Same(next, vm.SelectedSubtitle);
+                Assert.Equal("finished", first.Text); Assert.Equal("next", next.Text);
+                // Moving the playhead releases the hold and ordinary follow-selection resumes.
+                follow.Invoke(vm, new object[] { 7.0, rows });
+                follow.Invoke(vm, new object[] { first.StartTime.TotalSeconds, rows });
+                Dispatcher.UIThread.RunJobs(); Assert.Same(first, vm.SelectedSubtitle);
+                vm.LockTimeCodes = true; var end = first.EndTime;
+                vm.WaveformSetEndAndGoToNextCommand.Execute(null);
+                Assert.Same(first, vm.SelectedSubtitle); Assert.Equal(end, first.EndTime); vm.LockTimeCodes = false;
+                vm.SubtitleGrid.SelectedItems?.Clear(); vm.SubtitleGrid.SelectedItem = next;
+                Dispatcher.UIThread.RunJobs();
+                vm.WaveformSetEndAndGoToNextCommand.Execute(null); Dispatcher.UIThread.RunJobs();
+                Assert.Same(next, vm.SelectedSubtitle); Assert.Equal(3, vm.Subtitles.Count);
+            }
+        }
+        finally { window.Close(); Se.Settings.Tools.AutoAdvanceOnSetEnd = old; }
+    }
+
     [Fact]
     public void RecapMemoryIsProjectScopedAndIndependentOfTimestampsAndNeverAutoApplies()
     {

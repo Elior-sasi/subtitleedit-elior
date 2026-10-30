@@ -20,6 +20,39 @@ namespace Nikse.SubtitleEdit.Features.Main;
 
 public partial class MainViewModel
 {
+    private SubtitleLineViewModel? _stampEndAdvanceTarget;
+    private double _stampEndAdvanceSeconds;
+
+    private void AdvanceAfterStampEnd(SubtitleLineViewModel stamped, double seconds)
+    {
+        var next = GetNextWorkingRow(Subtitles.IndexOf(stamped));
+        if (next == null) return;
+
+        // Select now, before another command or a player tick can observe the old row.
+        SubtitleGrid.SelectedItems?.Clear();
+        SubtitleGrid.SelectedItem = next;
+        TableViewExtras.SyncSelectedItemsWithSelection(SubtitleGrid);
+        SubtitleGridSelectionChanged();
+        _stampEndAdvanceTarget = next;
+        _stampEndAdvanceSeconds = seconds;
+        _pausedSelectLastSeconds = seconds;
+        SelectAndScrollToRow(next);
+    }
+
+    private bool HoldStampEndAdvanceSelection(double seconds)
+    {
+        if (_stampEndAdvanceTarget == null) return false;
+        // End points are inclusive in playhead-follow. At the stamped end it would
+        // immediately reselect the row we just finished. A seek or playback movement
+        // releases this hold; it never changes the user's follow-selection settings.
+        if (ReferenceEquals(SelectedSubtitle, _stampEndAdvanceTarget) &&
+            Math.Abs(seconds - _stampEndAdvanceSeconds) <= 0.001)
+            return true;
+
+        _stampEndAdvanceTarget = null;
+        return false;
+    }
+
     private string? _customPlayerSettingsBaseline;
     internal static bool CustomCanKeepPlayer(string? before, string after)
     {
