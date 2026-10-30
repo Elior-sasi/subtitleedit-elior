@@ -54,9 +54,34 @@ jobs:
           python3 -m unittest discover -s service/tests -t service -p 'test_*.py' -v
           python3 -m unittest discover -s . -p 'test_setup.py' -v
           bash -n setup.sh service/deploy/deploy.sh
+          python3 ../ost/test_local_mfa.py -v
+
+  local-mfa-smoke:
+    needs: resolve
+    if: needs.resolve.outputs.build == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up isolated MFA conda environment
+        uses: conda-incubator/setup-miniconda@fc2d68f6413eb2d87b895e92f8584b5b94a10167 # v3
+        with:
+          activate-environment: subtitleedit-mfa
+          python-version: '3.11'
+          channels: conda-forge
+          channel-priority: strict
+          auto-activate-base: false
+      - name: Install official MFA 3.4.3 from conda-forge
+        shell: pwsh
+        run: |
+          & "$env:CONDA/Scripts/conda.exe" install -n subtitleedit-mfa -c conda-forge montreal-forced-aligner=3.4.3 -y
+          if ($LASTEXITCODE -ne 0) { throw 'MFA installation failed.' }
+      - name: Exercise real local MFA on synthetic English speech
+        shell: pwsh
+        run: ./tools/subtitleedit-rtl-fixed/ost/test-local-mfa-smoke.ps1
 
   build:
-    needs: [resolve, cloud-mfa-service]
+    needs: [resolve, cloud-mfa-service, local-mfa-smoke]
     runs-on: windows-latest
     timeout-minutes: 35
     permissions:
@@ -269,7 +294,7 @@ jobs:
             $names = @($archive.Entries | ForEach-Object { $_.FullName.Replace([char]92, [char]47) })
             $forbidden = @($names | Where-Object { $_ -match '(?i)(^|[\\/])(Settings[^\\/]*\.json|CloudMfa[\\/].*|.*\.dpapi|.*\.(srt|ass|ssa|vtt|ostproject|sework\.json|wav|mp4|mkv))$' })
             if ($forbidden.Count -gt 0) { throw "Forbidden user files in package: $($forbidden -join ', ')" }
-            foreach ($required in @('SubtitleEdit.exe', 'custom-build.json', 'custom-updater/gh.exe')) { if ($names -notcontains $required) { throw "Package is missing $required" } }
+            foreach ($required in @('SubtitleEdit.exe', 'custom-build.json', 'custom-updater/gh.exe', 'local-mfa/run_local_mfa.py', 'local-mfa/mfa_service/aligner.py', 'local-mfa/mfa_service/textmap.py')) { if ($names -notcontains $required) { throw "Package is missing $required" } }
             $manifestEntry = $archive.GetEntry('custom-build.json')
             $reader = [IO.StreamReader]::new($manifestEntry.Open()); $manifest = $reader.ReadToEnd() | ConvertFrom-Json; $reader.Dispose()
             if ($manifest.commit -ne $env:GITHUB_SHA -or $manifest.run_id -ne [long]$env:GITHUB_RUN_ID -or $manifest.channel -ne 'Elior-sasi/subtitleedit-elior/main') { throw 'Package manifest does not match this build.' }
@@ -329,5 +354,6 @@ jobs:
           path: director-export-smoke/*
           if-no-files-found: error
           retention-days: 7
+
 
 

@@ -96,3 +96,23 @@ $text = Exact $text '                    WriteCrispAsrInstalledHash(folder);' @'
 Set-Content $path $text -Encoding utf8
 
 
+
+# Local MFA bridge: code only, never engines, models or user data.
+Copy-Item "$source/LocalMfa.cs" 'src/ui/Features/Main/MainHelpers/LocalMfa.cs' -Force
+Copy-Item "$source/MainViewModel.LocalMfa.cs" 'src/ui/Features/Main/MainViewModel.LocalMfa.cs' -Force
+Copy-Item "$source/LocalMfaTests.cs" 'tests/UI/Features/Main/LocalMfaTests.cs' -Force
+New-Item -ItemType Directory 'src/ui/local-mfa/mfa_service' -Force | Out-Null
+Copy-Item "$source/local-mfa/run_local_mfa.py" 'src/ui/local-mfa/run_local_mfa.py' -Force
+foreach ($file in @('__init__.py', 'aligner.py', 'textmap.py')) {
+    Copy-Item "$source/local-mfa/mfa_service/$file" "src/ui/local-mfa/mfa_service/$file" -Force
+}
+$projectPath = 'src/ui/UI.csproj'
+$project = Get-Content $projectPath -Raw
+$project = Exact $project '</Project>' @'
+  <ItemGroup>
+    <Content Include="local-mfa/**/*.py" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
+'@
+Set-Content $projectPath $project -Encoding utf8
+

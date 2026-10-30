@@ -17,7 +17,7 @@ public partial class MainViewModel
     private async Task OpenScriptToSubtitles()
     {
         if (Window == null) return;
-        string? prepared = null; string media = _videoFileName ?? ""; var cloud = false;
+        string? prepared = null; string media = _videoFileName ?? ""; var cloud = false; var localMfa = false;
         var document = _subtitleFileName; var generation = _ostDocumentGeneration; var hash = GetFastHash();
         await ProjectDialog("תסריט לכתוביות — הכנה ותזמון מקומי", (panel, dialog) =>
         {
@@ -56,7 +56,7 @@ public partial class MainViewModel
                 var files = await dialog.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions { Title = "בחר קובץ שמע או וידאו", AllowMultiple = false, FileTypeFilter = new[] { new FilePickerFileType("שמע או וידאו") { Patterns = new[] { "*.wav", "*.mp3", "*.m4a", "*.flac", "*.mp4", "*.mkv", "*.mov", "*.avi", "*.webm" } } } });
                 var picked = files.FirstOrDefault()?.TryGetLocalPath(); if (picked != null) { media = picked; mediaName.Text = "שמע / וידאו: " + media; }
             });
-            panel.Children.Add(Label("המנוע: CrispASR מקומי, עם מודל תזמון לשפה שבחרת. התקנה ראשונה מורידה רכיבים; התסריט והשמע אינם מועלים לענן. Nyra אינו כלול; MFA זמין רק בכפתור היישור בענן שלמטה."));
+            panel.Children.Add(Label("המנוע: CrispASR מקומי, עם מודל תזמון לשפה שבחרת. התקנה ראשונה מורידה רכיבים; התסריט והשמע אינם מועלים לענן. Nyra אינו כלול; MFA זמין במסלול מקומי נפרד ובמסלול הענן שלמטה."));
             ActionButton(panel, "התקן / בחר מנוע ומודל תזמון…", async () => { await _windowService.ShowDialogAsync<ForcedAlignerSetupWindow, ForcedAlignerSetupViewModel>(dialog, vm => { vm.CustomScriptSetup = true; vm.Initialize(); }); });
             ActionButton(panel, "המשך לתצוגת התזמון — ללא שינוי המסמך כעת", async () =>
             {
@@ -64,6 +64,14 @@ public partial class MainViewModel
                 Refresh();
                 if (!await RequireFfmpegOk()) return;
                 prepared = preview.Text; dialog.Close();
+            });
+            ActionButton(panel, "יישור מקומי עם MFA — אנגלית…", async () =>
+            {
+                if (!File.Exists(media)) throw new InvalidDataException("בחר קובץ שמע או וידאו קיים.");
+                Refresh();
+                if (!await RequireFfmpegOk()) return;
+                LocalMfa.Request(CloudMfaImport.CuesFromPrepared(preview.Text ?? ""));
+                prepared = preview.Text; localMfa = true; dialog.Close();
             });
             panel.Children.Add(Label("אפשרות נוספת: יישור בענן עם Montreal Forced Aligner, בשירות שהקמת. בחלון הבא תראה מה יישלח ולאן, ושום דבר לא יישלח לפני אישורך."));
             ActionButton(panel, "יישור בענן עם MFA… - ללא שינוי המסמך כעת", async () =>
@@ -76,6 +84,7 @@ public partial class MainViewModel
         });
         if (prepared == null || Window == null) return;
         if (generation != _ostDocumentGeneration || document != _subtitleFileName || hash != GetFastHash()) { ShowStatus("המסמך השתנה. פתח שוב את כלי התסריט.", 7000); return; }
+        if (localMfa) { await OpenLocalMfaAlignment(prepared, media); return; }
         if (cloud) { await OpenCloudMfaAlignment(prepared, media); return; }
         var result = await ShowDialogAsync<ImportPlainTextWindow, ImportPlainTextViewModel>(vm => vm.InitializeCustomScript(prepared, media));
         if (!result.OkPressed || !result.CustomScriptCanImport || result.Subtitles.Count == 0) return;
@@ -89,4 +98,5 @@ public partial class MainViewModel
         ShowStatus("התזמון יובא למסמך חדש. בדוק מול השמע ושמור בשם חדש.", 9000);
     }
 }
+
 
