@@ -1,5 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $source = $PSScriptRoot
+python "$source/apply-waveform-rtl-marker.py"
+if ($LASTEXITCODE -ne 0) { throw 'Waveform RTL marker integration failed.' }
 $target = 'src/ui/Features/Tools/OstTable'
 New-Item -ItemType Directory -Path $target -Force | Out-Null
 Copy-Item "$source/OstTableWindow.cs" "$target/OstTableWindow.cs" -Force
