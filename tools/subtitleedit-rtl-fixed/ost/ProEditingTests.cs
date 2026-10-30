@@ -269,8 +269,8 @@ public partial class OstTableTests
                 Nikse.SubtitleEdit.Features.Main.MainHelpers.RightToLeftHelper.SetRightToLeftForDataGridAndText(window);
                 window.UpdateLayout();
                 Assert.Equal(FlowDirection.LeftToRight, pair.FlowDirection);
-                Assert.Equal("←", Assert.IsType<TextBlock>(back.Content).Text);
-                Assert.Equal("→", Assert.IsType<TextBlock>(forward.Content).Text);
+                Assert.Equal("fa-solid fa-backward-step", Assert.IsType<Optris.Icons.Avalonia.Icon>(back.Content).Value);
+                Assert.Equal("fa-solid fa-forward-step", Assert.IsType<Optris.Icons.Avalonia.Icon>(forward.Content).Value);
                 Assert.True(back.Bounds.X < forward.Bounds.X);
             }
             vm.LockTimeCodes = true; back.Command?.Execute(null); forward.Command?.Execute(null);

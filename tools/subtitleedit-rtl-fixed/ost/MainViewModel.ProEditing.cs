@@ -117,7 +117,7 @@ public partial class MainViewModel
             var button = new NonSpaceButton
             {
                 Name = forward ? "VideoFrameForward" : "VideoFrameBack",
-                Content = new TextBlock { Text = forward ? "→" : "←", FontSize = 18, FlowDirection = FlowDirection.LeftToRight },
+                Content = new Optris.Icons.Avalonia.Icon { Value = forward ? "fa-solid fa-forward-step" : "fa-solid fa-backward-step", Width = 18, Height = 18, FlowDirection = FlowDirection.LeftToRight },
                 Padding = new Avalonia.Thickness(6, 3), MinWidth = 28, MinHeight = 28, FlowDirection = FlowDirection.LeftToRight,
                 Command = forward ? VideoOneFrameForwardCommand : VideoOneFrameBackCommand,
             };
