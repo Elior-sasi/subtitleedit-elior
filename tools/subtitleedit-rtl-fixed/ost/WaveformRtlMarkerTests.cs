@@ -49,7 +49,7 @@ public partial class OstTableTests
                 AudioVisualizer av = skia ? new SkiaAudioVisualizer() : new AudioVisualizer();
                 av.WavePeaks = new WavePeakData2(126, Enumerable.Repeat(new WavePeak2(200, -200), 1260).ToArray());
                 av.ShowParagraphText = false; // Differences must be the badge, not glyph shaping.
-                av.ShowOriginalTextInWaveform = false;
+                av.ShowOriginalText = false;
                 vm.AudioVisualizer = av;
                 var waveformWindow = new Window { Width = 800, Height = 200, Content = av };
                 try
