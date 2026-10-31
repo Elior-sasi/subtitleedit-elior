@@ -23,7 +23,7 @@ patch(target / 'AudioVisualizer.cs', [
         if (marker != null)
         {
             using (context.PushClip(new Rect(currentRegionLeft + 1, contentTop, currentRegionWidth - 3, contentHeight)))
-                context.DrawText(marker, new Point(Math.Max(currentRegionLeft + 3, currentRegionRight - marker.Width - 3), contentTop + 1));
+                context.DrawText(marker, new Point(Math.Max(currentRegionLeft + 3, currentRegionRight - marker.Width - 3), contentTop + 14));
         }
         var textBounds = new Rect(currentRegionLeft + 1, contentTop, Math.Max(0, currentRegionWidth - 3 - markerWidth), contentHeight);'''),
 ])
@@ -43,7 +43,7 @@ patch(target / 'SkiaWaveformRenderer.cs', [
             {
                 canvas.Save();
                 canvas.ClipRect(SKRect.Create(left + 1, 0, width - 3, f.WorkingTextHeight));
-                DrawText(canvas, marker, Math.Max(left + 3, right - marker.Width - 3), 1, f.TextColor);
+                DrawText(canvas, marker, Math.Max(left + 3, right - marker.Width - 3), TimeLineTextOffset, f.TextColor);
                 canvas.Restore();
             }
             canvas.Save();

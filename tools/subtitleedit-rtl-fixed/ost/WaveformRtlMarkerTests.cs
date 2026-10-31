@@ -1,6 +1,8 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
@@ -82,6 +84,33 @@ public partial class OstTableTests
                     Assert.Equal(raw, first.Text);
                     Assert.False(WaveformRtlMarker.HasRtlControls(first.Text));
                     Assert.Equal(plain, Capture());
+                    // Compare actual glyph rows, with caption rendering enabled separately.
+                    // The marker used to start 13 pixels above the subtitle.
+                    int FirstInkRow()
+                    {
+                        Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+                        using var frame = waveformWindow.CaptureRenderedFrame()!;
+                        var stride = frame.PixelSize.Width * 4;
+                        var bytes = new byte[stride * frame.PixelSize.Height];
+                        var pin = GCHandle.Alloc(bytes, GCHandleType.Pinned);
+                        try { frame.CopyPixels(new PixelRect(frame.PixelSize), pin.AddrOfPinnedObject(), bytes.Length, stride); }
+                        finally { pin.Free(); }
+                        for (var y = 0; y < Math.Min(60, frame.PixelSize.Height); y++)
+                            for (var x = 0; x < frame.PixelSize.Width; x++)
+                            {
+                                var i = y * stride + x * 4;
+                                if (bytes[i] > 220 && bytes[i + 1] > 220 && bytes[i + 2] > 220)
+                                    return y;
+                            }
+                        throw new Exception("No waveform caption glyphs rendered.");
+                    }
+                    av.ShowParagraphText = true;
+                    var captionTop = FirstInkRow();
+                    av.ShowParagraphText = false;
+                    vm.FixRightToLeftViaUnicodeControlCharactersCommand.Execute(null);
+                    var badgeTop = FirstInkRow();
+                    Assert.InRange(Math.Abs(captionTop - badgeTop), 0, 5);
+                    vm.RemoveUnicodeControlCharactersCommand.Execute(null);
                     Assert.Equal(TimeSpan.FromSeconds(1), first.StartTime);
                     Assert.Equal(TimeSpan.FromSeconds(4), first.EndTime);
                 }
