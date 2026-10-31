@@ -86,8 +86,10 @@ public partial class OstTableTests
                     Assert.Equal(plain, Capture());
                     // Compare actual glyph rows, with caption rendering enabled separately.
                     // The marker used to start 13 pixels above the subtitle.
-                    int FirstInkRow()
+                    byte[]? emptyPixels = null;
+                    int FirstInkRow(bool captureEmpty = false)
                     {
+                        av.InvalidateVisual();
                         Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick();
                         using var frame = waveformWindow.CaptureRenderedFrame()!;
                         var stride = frame.PixelSize.Width * 4;
@@ -95,15 +97,17 @@ public partial class OstTableTests
                         var pin = GCHandle.Alloc(bytes, GCHandleType.Pinned);
                         try { frame.CopyPixels(new PixelRect(frame.PixelSize), pin.AddrOfPinnedObject(), bytes.Length, stride); }
                         finally { pin.Free(); }
+                        if (captureEmpty) { emptyPixels = bytes; return -1; }
                         for (var y = 0; y < Math.Min(60, frame.PixelSize.Height); y++)
                             for (var x = 0; x < frame.PixelSize.Width; x++)
                             {
                                 var i = y * stride + x * 4;
-                                if (bytes[i] > 220 && bytes[i + 1] > 220 && bytes[i + 2] > 220)
+                                if (Math.Abs(bytes[i] - emptyPixels![i]) > 30 || Math.Abs(bytes[i + 1] - emptyPixels[i + 1]) > 30 || Math.Abs(bytes[i + 2] - emptyPixels[i + 2]) > 30)
                                     return y;
                             }
                         throw new Exception("No waveform caption glyphs rendered.");
                     }
+                    FirstInkRow(captureEmpty: true);
                     av.ShowParagraphText = true;
                     var captionTop = FirstInkRow();
                     av.ShowParagraphText = false;
