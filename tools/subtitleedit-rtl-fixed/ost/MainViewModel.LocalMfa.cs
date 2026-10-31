@@ -32,6 +32,7 @@ public partial class MainViewModel
         var config = Path.Combine(data, "python-path.txt");
         string configured;
         try { configured = File.Exists(config) ? File.ReadAllText(config) : ""; } catch { configured = ""; }
+        configured = LocalMfa.FindPython(configured, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
         List<CloudMfaImport.Cue>? approved = null;
         using var closing = new CancellationTokenSource();
         Task pending = Task.CompletedTask;
@@ -39,67 +40,95 @@ public partial class MainViewModel
         {
             var closed = false; var busy = false; CancellationTokenSource? operation = null;
             List<CloudMfaImport.Cue>? result = null;
-            dialog.Closed += (_, _) => { closed = true; closing.Cancel(); };
-            panel.Children.Add(Label("התסריט ופס הקול מעובדים במחשב הזה בלבד. אין שליחה לשירות ענן. נדרשים תסריט ושמע תואמים באנגלית; זמנים שנראים תקינים עדיין דורשים בדיקה באוזן."));
-            panel.Children.Add(Label("בהתקנה הראשונה: התקן Miniforge מהאתר הרשמי https://conda-forge.org/download/ ופתח Miniforge Prompt. הרץ את הפקודה שלמטה, ואז בחר כאן את python.exe מתוך סביבת subtitleedit-mfa שנוצרה. המנוע והמודלים אינם נכללים בעדכוני התוכנה."));
+            var display = new LocalMfa.ProgressDisplay();
+            dialog.Closed += (_, _) => { closed = true; closing.Cancel(); display.Stop(); };
+            panel.Children.Add(Label("תזמון תסריט ושמע תואמים באנגלית, במחשב הזה בלבד. בסיום תוכל לבדוק את התוצאה לפני ייבוא למסמך חדש."));
+            var environment = Label(""); panel.Children.Add(environment);
+            var advancedPanel = new StackPanel();
+            var advanced = new Expander { Name = "LocalMfaAdvanced", Header = Label("מתקדם — התקנה ומיקום המנוע"), Content = advancedPanel,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch, HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Stretch };
+            advancedPanel.Children.Add(Label("אם MFA עדיין לא מותקן: התקן Miniforge מהאתר הרשמי https://conda-forge.org/download/ והריץ ב־Miniforge Prompt את הפקודה הבאה. לאחר מכן פתח שוב את החלון לזיהוי אוטומטי, או בחר את הסביבה כאן."));
             var command = Field("conda create -n subtitleedit-mfa -c conda-forge python=3.11 montreal-forced-aligner=3.4.3 -y");
-            command.IsReadOnly = true; command.FlowDirection = FlowDirection.LeftToRight; panel.Children.Add(command);
+            command.IsReadOnly = true; command.FlowDirection = FlowDirection.LeftToRight; advancedPanel.Children.Add(command);
             var python = Field(configured); python.FlowDirection = FlowDirection.LeftToRight;
-            AutomationProperties.SetName(python, "python.exe מתוך סביבת MFA המקומית"); panel.Children.Add(python);
-            ActionButton(panel, "בחר python.exe של סביבת MFA…", async () =>
+            AutomationProperties.SetName(python, "python.exe מתוך סביבת MFA המקומית"); advancedPanel.Children.Add(python);
+            var actions = new List<Button>();
+            void AddAction(StackPanel target, string label, Func<Task> action)
+            {
+                ActionButton(target, label, action); actions.Add((Button)target.Children.Last());
+            }
+            AddAction(advancedPanel, "בחר מיקום התקנת MFA…", async () =>
             {
                 if (busy) return;
                 var files = await dialog.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions { Title = "בחר python.exe מתוך סביבת subtitleedit-mfa", AllowMultiple = false,
                     FileTypeFilter = new[] { new FilePickerFileType("Python של MFA") { Patterns = new[] { "python.exe" } } } });
                 if (!closed && files.FirstOrDefault()?.TryGetLocalPath() is string path) python.Text = path;
             });
-            var status = Label("טרם הופעל יישור."); panel.Children.Add(status);
+            panel.Children.Add(display);
+            var setup = new StackPanel();
             var preview = Field("", true); preview.IsReadOnly = true; preview.IsVisible = false;
             preview.FlowDirection = FlowDirection.LeftToRight; preview.MaxHeight = 320;
             AutomationProperties.SetName(preview, "תזמוני MFA מקומי לבדיקה");
             var reviewed = new CheckBox { Content = Label("בדקתי את הנוסח והתזמונים מול השמע ואני מאשר ייבוא למסמך חדש"), IsVisible = false };
-            python.TextChanged += (_, _) => { result = null; reviewed.IsChecked = false; reviewed.IsVisible = false; preview.IsVisible = false; };
+            Button? importButton = null;
+            void RefreshActions()
+            {
+                foreach (var button in actions) button.IsEnabled = !busy;
+                python.IsEnabled = !busy;
+                if (importButton != null) importButton.IsEnabled = !busy && result != null && reviewed.IsChecked == true;
+                var found = !string.IsNullOrWhiteSpace(python.Text) && File.Exists(python.Text.Trim());
+                setup.IsVisible = !LocalMfa.ModelsReady(cache);
+                environment.Text = !found ? "לא נמצאה התקנת MFA. פתח את מתקדם להגדרה ראשונית." :
+                    LocalMfa.ModelsReady(cache) ? "נמצאה סביבה ומודלים מקומיים. המנוע ייבדק בתחילת התזמון." : "נמצאה סביבה מקומית. נדרשת הורדת מודלים ראשונית.";
+            }
+            python.TextChanged += (_, _) => { result = null; reviewed.IsChecked = false; reviewed.IsVisible = false; preview.IsVisible = false; RefreshActions(); };
+            reviewed.PropertyChanged += (_, e) => { if (e.Property.Name == "IsChecked") RefreshActions(); };
+            IProgress<string>? progress = null;
+            int operationGeneration = 0;
             async Task Perform(Func<string, CancellationToken, Task> action)
             {
                 if (busy) return;
                 busy = true; python.IsEnabled = false; result = null; reviewed.IsChecked = false; reviewed.IsVisible = false; preview.IsVisible = false;
+                var currentOperation = ++operationGeneration;
+                progress = new Progress<string>(message => { if (!closed && busy && currentOperation == operationGeneration) display.Apply(message); });
+                display.Begin("מכין את פעולת התזמון…"); RefreshActions();
                 operation = CancellationTokenSource.CreateLinkedTokenSource(closing.Token);
                 var path = python.Text?.Trim() ?? "";
                 try
                 {
                     LocalMfa.PythonCommand(path, cache, "--check"); // validate path before persisting it
-                    Directory.CreateDirectory(data); File.WriteAllText(config, path);
-                    await LocalMfa.Exclusive(() => action(path, operation.Token), operation.Token);
+                    await LocalMfa.Exclusive(async () =>
+                    {
+                        display.ApplyStage("בודק את המנוע המקומי…");
+                        await LocalMfa.Run(LocalMfa.PythonCommand(path, cache, "--check"), TimeSpan.FromMinutes(2), progress, operation.Token);
+                        operation.Token.ThrowIfCancellationRequested();
+                        Directory.CreateDirectory(data); File.WriteAllText(config, path);
+                        await action(path, operation.Token);
+                    }, operation.Token);
                 }
-                catch (OperationCanceledException) { if (!closed) status.Text = "בוטל. המסמך לא השתנה."; }
-                catch (Exception e) { if (!closed) status.Text = e.Message; }
-                finally { operation.Dispose(); operation = null; busy = false; if (!closed) python.IsEnabled = true; }
+                catch (OperationCanceledException) { if (!closed) display.Finish("בוטל. המסמך לא השתנה."); }
+                catch (Exception e) { if (!closed) { display.Finish(e.Message); advanced.IsExpanded = string.IsNullOrWhiteSpace(path) || !File.Exists(path); } }
+                finally { operation.Dispose(); operation = null; busy = false; display.Stop(); if (!closed) RefreshActions(); }
             }
-            var progress = new Progress<string>(stage =>
-            {
-                if (closed) return;
-                status.Text = stage switch { "preparing" => "מכין תסריט ושמע מקומיים…", "aligning_pass1" => "MFA: יישור ראשון…",
-                    "segmenting" => "מזהה קטעי דיבור…", "aligning_pass2" => "MFA: יישור חוזר במקטעי הדיבור…",
-                    "downloading_dictionary" => "מוריד מילון הגייה לאנגלית…", "downloading_acoustic" => "מוריד מודל אקוסטי לאנגלית…",
-                    _ => status.Text };
-            });
-            ActionButton(panel, "בדוק התקנת MFA מקומית", async () =>
+            AddAction(advancedPanel, "בדוק התקנת MFA", async () =>
             {
                 if (busy) return;
-                pending = Perform(async (path, token) => { status.Text = "בודק מנוע מקומי…"; await LocalMfa.Run(LocalMfa.PythonCommand(path, cache, "--check"), TimeSpan.FromMinutes(2), progress, token); if (!closed) status.Text = "MFA 3.4.3 זמין מקומית."; }); await pending;
+                pending = Perform((path, token) => { if (!closed) display.Finish("MFA 3.4.3 זמין מקומית."); return Task.CompletedTask; }); await pending;
             });
-            panel.Children.Add(Label("הכפתור הבא מוריד רק מודל אקוסטי ומילון הגייה רשמיים לאנגלית באמצעות MFA. שום תסריט או שמע אינם נשלחים. ההורדה דורשת חיבור לאינטרנט ונפח דיסק."));
-            ActionButton(panel, "הורד מודלים לאנגלית — ללא שליחת תסריט או שמע", async () =>
+            setup.Children.Add(Label("הכנה ראשונית: הורדת מודל ומילון לאנגלית. התסריט והשמע אינם נשלחים; נדרש חיבור לאינטרנט."));
+            AddAction(setup, "הורד את המודלים הנדרשים", async () =>
             {
                 if (busy) return;
-                pending = Perform(async (path, token) => { await LocalMfa.Run(LocalMfa.PythonCommand(path, cache, "--download-models"), TimeSpan.FromMinutes(60), progress, token); if (!closed) status.Text = "המודלים לאנגלית הורדו."; }); await pending;
+                pending = Perform(async (path, token) => { await LocalMfa.Run(LocalMfa.PythonCommand(path, cache, "--download-models"), TimeSpan.FromMinutes(60), progress, token); if (!closed) display.Finish("המודלים מוכנים. אפשר לתזמן את התסריט."); }); await pending;
             });
-            ActionButton(panel, "הפעל יישור MFA מקומי", async () =>
+            panel.Children.Add(setup);
+            AddAction(panel, "תזמן את התסריט", async () =>
             {
                 if (busy) return;
                 pending = Perform(async (path, token) =>
                 {
                     if (!Fresh()) throw new InvalidOperationException("המסמך או המדיה השתנו. פתח שוב את כלי התסריט.");
+                    if (!LocalMfa.ModelsReady(cache)) throw new InvalidOperationException("הורד תחילה את המודלים באמצעות כפתור ההכנה הראשונית.");
                     var work = Path.Combine(Path.GetTempPath(), "SubtitleEdit-LocalMfa-" + Guid.NewGuid().ToString("N"));
                     Directory.CreateDirectory(work);
                     try
@@ -109,30 +138,35 @@ public partial class MainViewModel
                         var ffmpeg = File.Exists(Se.Settings.General.FfmpegPath) ? Se.Settings.General.FfmpegPath : "ffmpeg";
                         var extract = new ProcessStartInfo(ffmpeg) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true, RedirectStandardOutput = true };
                         foreach (var a in new[] { "-hide_banner", "-loglevel", "error", "-y", "-i", media, "-t", "7201", "-vn", "-map", "0:a:0", "-af", "aresample=async=1:first_pts=0", "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav }) extract.ArgumentList.Add(a);
-                        status.Text = "מחלץ פס קול מקומי (עד שעתיים)…";
+                        display.ApplyStage("מכין את פס הקול לתזמון…");
                         await LocalMfa.Run(extract, TimeSpan.FromMinutes(10), null, token);
+                        display.ApplyStage("בודק את קובצי השמע והתסריט…");
                         var audioHash = await Task.Run(() => LocalMfa.Hash(wav), token);
                         var requestHash = await Task.Run(() => LocalMfa.Hash(req), token);
                         await LocalMfa.Run(LocalMfa.PythonCommand(path, cache, "--request", req, "--audio", wav, "--work", work), TimeSpan.FromMinutes(125), progress, token);
+                        display.ApplyStage("בודק את תוצאת התזמון…");
                         var aligned = await Task.Run(() => LocalMfa.ReadResult(Path.Combine(work, "result.json"), cues, audioHash, requestHash), token);
                         token.ThrowIfCancellationRequested();
                         if (closed || !Fresh()) throw new InvalidOperationException("המסמך או המדיה השתנו. התוצאה לא יובאה.");
                         result = aligned.Cues;
                         preview.Text = aligned.ReviewText;
                         preview.IsVisible = reviewed.IsVisible = true;
-                        status.Text = "היישור המקומי הושלם. האזן ובדוק לפני אישור; המסמך טרם השתנה.";
+                        display.Finish("התזמון הושלם. בדוק מול השמע ואשר ייבוא למסמך חדש.", true);
                     }
                     finally { try { Directory.Delete(work, true); } catch { } }
                 }); await pending;
             });
             ActionButton(panel, "בטל יישור / הורדה", () => { operation?.Cancel(); return Task.CompletedTask; });
             panel.Children.Add(preview); panel.Children.Add(reviewed);
-            ActionButton(panel, "בדקתי — ייבא למסמך חדש", () =>
+            AddAction(panel, "בדקתי — ייבא למסמך חדש", () =>
             {
                 if (busy || result == null || reviewed.IsChecked != true) throw new InvalidOperationException("השלם יישור וסמן שבדקת את התוצאה.");
                 if (!Fresh()) throw new InvalidOperationException("המסמך או המדיה השתנו. פתח מחדש את הכלי.");
                 approved = result; dialog.Close(); return Task.CompletedTask;
             });
+            importButton = actions.Last();
+            panel.Children.Add(advanced);
+            RefreshActions();
         });
         closing.Cancel(); await pending;
         if (approved == null || Window == null || !Fresh()) return;
@@ -143,3 +177,4 @@ public partial class MainViewModel
         ShowStatus("MFA מקומי: יובא למסמך חדש. בדוק מול השמע ושמור כ־SRT.", 9000);
     }
 }
+

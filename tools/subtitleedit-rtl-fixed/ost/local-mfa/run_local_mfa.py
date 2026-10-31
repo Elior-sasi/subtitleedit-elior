@@ -6,10 +6,12 @@ Only the explicit --download-models action permits MFA model downloads.
 from __future__ import annotations
 
 import argparse
+import codecs
 import hashlib
 import importlib.metadata
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -52,6 +54,23 @@ def duration(path: Path):
     return seconds
 
 
+# Forward numbers only, never raw CLI output (which may contain source text/paths).
+# Both ordinary tqdm and rich-style bars are recognized; missing bars stay unknown.
+_ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+_PERCENT = re.compile(r"(?<![\d.])(\d{1,3})%")
+_progress_callback = lambda percent: None
+
+
+def progress_percent(line):
+    line = _ANSI.sub("", line)
+    if not any(c in line for c in ("|", "━", "─", "█", "╸")):
+        return None
+    match = _PERCENT.search(line)
+    if match and 0 <= int(match[1]) <= 100:
+        return int(match[1])
+    return None
+
+
 def run_cli(cmd, workdir, timeout_s, cancelled):
     """Preserve Windows conda DLL/SystemRoot environment; bound runtime and logs."""
     env = os.environ.copy()
@@ -62,8 +81,24 @@ def run_cli(cmd, workdir, timeout_s, cancelled):
     # Drain continuously without storing transcript/model/path output in the app log.
     import threading
     def drain():
-        while proc.stdout.read(8192):
-            pass
+        line = ""
+        decoder = codecs.getincrementaldecoder("utf-8")("replace")
+        previous = None
+        last_report = 0.0
+        while True:
+            chunk = proc.stdout.read1(4096)
+            if not chunk:
+                break
+            for char in decoder.decode(chunk):
+                if char in "\r\n":
+                    percent = progress_percent(line)
+                    now = time.monotonic()
+                    if percent is not None and percent != previous and (now - last_report >= .2 or percent == 100):
+                        _progress_callback(percent)
+                        previous, last_report = percent, now
+                    line = ""
+                elif len(line) < 512:
+                    line += char
     reader = threading.Thread(target=drain, daemon=True)
     reader.start()
     deadline = time.monotonic() + max(1, timeout_s)
@@ -91,6 +126,8 @@ def main(argv=None):
     p.add_argument("--audio", type=Path)
     p.add_argument("--work", type=Path)
     args = p.parse_args(argv)
+    global _progress_callback
+    _progress_callback = lambda percent: print("mfa_progress:" + str(percent), flush=True)
     version = importlib.metadata.version("montreal-forced-aligner")
     if version != VERSION:
         raise ValueError("mfa_version_must_be_3_4_3")
@@ -146,3 +183,4 @@ if __name__ == "__main__":
         # No transcript or source file paths in diagnostics.
         print("Local MFA failed: " + type(e).__name__, file=sys.stderr)
         sys.exit(1)
+

@@ -53,6 +53,23 @@ class LocalMfaTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 runner.run_cli([sys.executable, "-c", "raise SystemExit(2)"], root, 10, lambda: False)
 
+    def test_progress_parser_accepts_only_bounded_bar_percentages(self):
+        for line, expected in (("Aligning 42%|#### |", 42), (" 100% ━━━━━ 5/5", 100),
+                               ("\x1b[32m 7% ━━━\x1b[0m", 7), ("999%|", None),
+                               ("private transcript 42%", None), ("| no percentage", None)):
+            self.assertEqual(expected, runner.progress_percent(line))
+
+    def test_progress_forwarding_handles_carriage_return_without_leaking_raw_output(self):
+        reports = []
+        previous = runner._progress_callback
+        runner._progress_callback = reports.append
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                runner.run_cli([sys.executable, "-c", "import sys,time;sys.stdout.write('private path and words\\n42%|####|\\r');sys.stdout.flush();time.sleep(.3);print('100%|#####|')"], Path(tmp), 10, lambda: False)
+            self.assertEqual([42, 100], reports)
+        finally:
+            runner._progress_callback = previous
+
     def test_cancel_kills_owned_process(self):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(TimeoutError):
@@ -71,3 +88,4 @@ class LocalMfaTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

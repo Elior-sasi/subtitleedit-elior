@@ -5,6 +5,10 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Globalization;
+using Avalonia.Controls;
+using Avalonia.Automation;
+using Avalonia.Threading;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -14,6 +18,82 @@ internal static class LocalMfa
 {
     private static readonly SemaphoreSlim Gate = new(1, 1);
     internal static string Runner => Path.Combine(AppContext.BaseDirectory, "local-mfa", "run_local_mfa.py");
+
+    // A configured path wins; discovery only examines this environment name in
+    // known per-user conda roots. Never execute arbitrary PATH/Python candidates.
+    internal static string FindPython(string configured, string profile)
+    {
+        bool Valid(string p) => Path.IsPathFullyQualified(p) && File.Exists(p) && Path.GetFileName(p).Equals("python.exe", StringComparison.OrdinalIgnoreCase);
+        configured = configured.Trim();
+        if (Valid(configured)) return configured;
+        foreach (var root in new[] { "miniforge3", "mambaforge", "miniconda3", "anaconda3", Path.Combine("AppData", "Local", "miniforge3"), Path.Combine("AppData", "Local", "miniconda3"), ".conda" })
+        {
+            var candidate = Path.Combine(profile, root, "envs", "subtitleedit-mfa", "python.exe");
+            if (Valid(candidate)) return candidate;
+        }
+        return "";
+    }
+
+    internal static bool ModelsReady(string cache) =>
+        File.Exists(Path.Combine(cache, "pretrained_models", "acoustic", "english_us_arpa.zip")) &&
+        File.Exists(Path.Combine(cache, "pretrained_models", "dictionary", "english_us_arpa.dict"));
+
+    internal sealed class ProgressDisplay : StackPanel
+    {
+        internal readonly TextBlock Stage = new() { Text = "מוכן לבדיקה.", TextWrapping = Avalonia.Media.TextWrapping.Wrap, FontSize = 16, FlowDirection = Avalonia.Media.FlowDirection.RightToLeft };
+        internal readonly ProgressBar Bar = new() { Minimum = 0, Maximum = 100, Height = 18, IsVisible = false };
+        internal readonly TextBlock Detail = new() { TextWrapping = Avalonia.Media.TextWrapping.Wrap, FontSize = 16, FlowDirection = Avalonia.Media.FlowDirection.RightToLeft };
+        private readonly Stopwatch _clock = new();
+        private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
+        private double? _percent;
+        internal ProgressDisplay()
+        {
+            Name = "LocalMfaProgress";
+            AutomationProperties.SetName(Bar, "התקדמות השלב הנוכחי של MFA");
+            Children.Add(Stage); Children.Add(Bar); Children.Add(Detail);
+            _timer.Tick += (_, _) => RefreshTime();
+            DetachedFromVisualTree += (_, _) => Stop();
+        }
+        internal void Begin(string label)
+        {
+            _clock.Restart(); _timer.Start(); Bar.IsVisible = true; ApplyStage(label);
+        }
+        internal void ApplyStage(string label)
+        {
+            Stage.Text = label; _percent = null; Bar.Value = 0; Bar.IsIndeterminate = true; RefreshTime();
+        }
+        internal void Apply(string message)
+        {
+            if (message.StartsWith("mfa_progress:", StringComparison.Ordinal) &&
+                double.TryParse(message.Substring(13), NumberStyles.None, CultureInfo.InvariantCulture, out var n) && n >= 0 && n <= 100)
+            {
+                _percent = n; Bar.IsIndeterminate = false; Bar.Value = n; RefreshTime(); return;
+            }
+            var label = message switch
+            {
+                "preparing" => "מכין תסריט ושמע…", "aligning_pass1" => "מיישר את התסריט לשמע — מעבר ראשון…",
+                "segmenting" => "מזהה קטעי דיבור…", "aligning_pass2" => "מדייק את התזמון בתוך קטעי הדיבור…",
+                "downloading_dictionary" => "מוריד מילון הגייה לאנגלית…", "downloading_acoustic" => "מוריד מודל אקוסטי לאנגלית…",
+                _ => null,
+            };
+            if (label != null) ApplyStage(label);
+        }
+        private void RefreshTime()
+        {
+            var elapsed = _clock.Elapsed;
+            Detail.Text = (_percent.HasValue ? $"{_percent.Value:0}% בפעולת המנוע הנוכחית · " : "ממתין לנתוני התקדמות מהמנוע · ") +
+                $"זמן שחלף: {(int)elapsed.TotalMinutes:00}:{elapsed.Seconds:00}";
+            AutomationProperties.SetName(Bar, Detail.Text);
+        }
+        internal void Stop() { _timer.Stop(); _clock.Stop(); }
+        internal void Finish(string label, bool success = false)
+        {
+            Stop(); Stage.Text = label; Bar.IsIndeterminate = false;
+            // 100% overall is reserved for a validated, completed alignment.
+            if (success) { Bar.Value = 100; _percent = 100; RefreshTime(); Detail.Text = "הושלם · " + Detail.Text; }
+            else { Bar.IsVisible = false; Detail.Text = "זמן כולל: " + _clock.Elapsed.ToString(@"hh\:mm\:ss"); }
+        }
+    }
 
     internal static ProcessStartInfo PythonCommand(string python, string cache, params string[] arguments)
     {
@@ -101,3 +181,4 @@ internal static class LocalMfa
         return new Result(validated, r.SummaryText + "\n\n" + string.Join("\n\n", r.Cues.Select((c, i) => CloudMfaImport.Describe(c, cues[i].Text))));
     }
 }
+

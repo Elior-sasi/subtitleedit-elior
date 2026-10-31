@@ -50,6 +50,53 @@ public partial class OstTableTests
         finally { File.Delete(file); }
     }
 
+    [Fact]
+    public void LocalMfaDiscoveryPreservesConfiguredPathAndChecksBothModels()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mfa-discovery-" + Guid.NewGuid());
+        var detected = Path.Combine(root, "miniforge3", "envs", "subtitleedit-mfa", "python.exe");
+        var configured = Path.Combine(root, "chosen", "python.exe");
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(detected)!); File.WriteAllText(detected, "fixture");
+            Directory.CreateDirectory(Path.GetDirectoryName(configured)!); File.WriteAllText(configured, "fixture");
+            Assert.Equal(configured, LocalMfa.FindPython(configured, root));
+            Assert.Equal(detected, LocalMfa.FindPython("missing", root));
+            File.Delete(detected); Assert.Empty(LocalMfa.FindPython("", root));
+            Assert.False(LocalMfa.ModelsReady(root));
+            foreach (var part in new[] { "acoustic/english_us_arpa.zip", "dictionary/english_us_arpa.dict" })
+            {
+                var path = Path.Combine(root, "pretrained_models", part); Directory.CreateDirectory(Path.GetDirectoryName(path)!); File.WriteAllText(path, "fixture");
+                if (part.StartsWith("acoustic")) Assert.False(LocalMfa.ModelsReady(root));
+            }
+            Assert.True(LocalMfa.ModelsReady(root));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [AvaloniaFact]
+    public void LocalMfaProgressShowsOnlyMeasuredPercentAndResetsBetweenStages()
+    {
+        var display = new LocalMfa.ProgressDisplay();
+        var window = new Window { Content = display };
+        try
+        {
+            window.Show(); display.Begin("מכין שמע");
+            Assert.True(display.Bar.IsVisible); Assert.True(display.Bar.IsIndeterminate);
+            Assert.Contains("00:00", display.Detail.Text);
+            display.Apply("mfa_progress:42"); Assert.False(display.Bar.IsIndeterminate); Assert.Equal(42, display.Bar.Value);
+            Assert.Contains("42%", display.Detail.Text);
+            display.Apply("mfa_progress:101"); Assert.Equal(42, display.Bar.Value);
+            display.Apply("raw private path and transcript"); Assert.DoesNotContain("private", display.Stage.Text);
+            display.Apply("segmenting"); Assert.True(display.Bar.IsIndeterminate); Assert.Equal(0, display.Bar.Value);
+            Assert.DoesNotContain("42%", display.Detail.Text);
+            display.Finish("בוטל"); Assert.False(display.Bar.IsVisible); Assert.False(display.Bar.IsIndeterminate);
+            display.Begin("בודק תוצאה"); display.Finish("הושלם", true); Assert.Equal(100, display.Bar.Value);
+            Assert.False(display.Bar.IsIndeterminate);
+        }
+        finally { display.Stop(); window.Close(); }
+    }
+
     [AvaloniaFact]
     public async Task RealLocalMfaDialogCancelKeepsDocumentAndSettingsUntouched()
     {
@@ -65,6 +112,11 @@ public partial class OstTableTests
             var task = (Task)typeof(MainViewModel).GetMethod("OpenLocalMfaAlignment", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(vm, new object[] { "Hello world!", media })!;
             Dispatcher.UIThread.RunJobs();
             var dialog = Assert.Single(window.OwnedWindows.Where(w => w.Title == "תסריט באנגלית לכתוביות באנגלית — MFA מקומי"));
+            var advanced = Assert.Single(dialog.GetVisualDescendants().OfType<Expander>().Where(e => e.Name == "LocalMfaAdvanced"));
+            Assert.False(advanced.IsExpanded);
+            Assert.Contains(dialog.GetVisualDescendants().OfType<Button>(), b => b.Content as string == "תזמן את התסריט");
+            Assert.False(Assert.Single(dialog.GetVisualDescendants().OfType<Button>().Where(b => b.Content as string == "בדקתי — ייבא למסמך חדש")).IsEnabled);
+            advanced.IsExpanded = true; Dispatcher.UIThread.RunJobs();
             Assert.Contains(dialog.GetVisualDescendants().OfType<TextBox>(), t => t.Text != null && t.Text.Contains("montreal-forced-aligner=3.4.3"));
             dialog.Close(); await task;
             Assert.Same(original, Assert.Single(vm.Subtitles)); Assert.Equal("Current document", original.Text);
@@ -74,3 +126,4 @@ public partial class OstTableTests
         finally { window.Close(); File.Delete(media); }
     }
 }
+
