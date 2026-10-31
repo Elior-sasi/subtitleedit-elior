@@ -547,6 +547,76 @@ public partial class OstTableTests
         finally { window.TrySaveAndStop(); if (File.Exists(path)) File.Delete(path); }
     }
     [AvaloniaFact]
+    public void OstWordExportMatchesReferenceLayoutAndPreservesOrderNotesAndText()
+    {
+        var view = MakeWindow();
+        var directory = Path.Combine(Path.GetTempPath(), "ost-export-" + Guid.NewGuid());
+        Directory.CreateDirectory(directory);
+        try
+        {
+            Field<TextBox>(view, "_txtTitle").Text = "סדרת בדיקה - פרק 8";
+            var entries = Enumerable.Range(0, 48).Select(i => new OstEntry
+            {
+                SourceId = Guid.NewGuid(), StartTime = $"00:{i:00}:01,234",
+                Text = i == 0 ? "שלום & <עולם>\r\nEnglish 123\n\u200fבדיקת עברית!" :
+                    "זהו כיתוב סינתטי לבדיקת ייצוא עם משפט ארוך שנועד לבדוק גלישת טקסט בתוך התא בלי חיתוך שורות.",
+                Notes = "הערה " + i,
+            }).ToList();
+            var before = System.Text.Json.JsonSerializer.Serialize(entries);
+            XNamespace w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+            foreach (var notes in new[] { false, true })
+            {
+                typeof(OstTableView).GetField("_includeNotes", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(view, notes);
+                var path = Path.Combine(directory, notes ? "ost-with-notes.docx" : "ost-reference.docx");
+                view.WriteDocx(path, entries);
+                using var zip = ZipFile.OpenRead(path);
+                using var stream = zip.GetEntry("word/document.xml")!.Open();
+                var document = XDocument.Load(stream);
+                var body = document.Root!.Element(w + "body")!;
+                var title = body.Element(w + "p")!;
+                Assert.Equal("סדרת בדיקה - פרק 8 - OST", string.Concat(title.Descendants(w + "t").Select(t => t.Value)));
+                Assert.Equal("center", (string?)title.Element(w + "pPr")!.Element(w + "jc")!.Attribute(w + "val"));
+                Assert.Equal("28", (string?)title.Descendants(w + "sz").Single().Attribute(w + "val"));
+                Assert.NotNull(title.Descendants(w + "u").SingleOrDefault());
+                var table = body.Element(w + "tbl")!;
+                Assert.NotNull(table.Element(w + "tblPr")!.Element(w + "bidiVisual"));
+                var widths = table.Element(w + "tblGrid")!.Elements().Select(c => (int)c.Attribute(w + "w")!).ToArray();
+                Assert.Equal(notes ? new[] { 2340, 4680, 2340 } : new[] { 2808, 6552 }, widths);
+                Assert.Equal(9360, widths.Sum());
+                Assert.Equal(6, table.Descendants(w + "tblBorders").Single().Elements().Count());
+                Assert.All(table.Descendants(w + "tblBorders").Single().Elements(), b => Assert.Equal("000000", (string?)b.Attribute(w + "color")));
+                var rows = table.Elements(w + "tr").ToArray();
+                Assert.Equal(entries.Count + 1, rows.Length);
+                Assert.NotNull(rows[0].Descendants(w + "tblHeader").SingleOrDefault());
+                Assert.Equal(notes ? new[] { "TC", "כיתוב", "הערות" } : new[] { "TC", "כיתוב" }, rows[0].Elements(w + "tc").Select(c => c.Value).ToArray());
+                Assert.All(rows[0].Descendants(w + "shd"), sh => Assert.Equal("F0F0F0", (string?)sh.Attribute(w + "fill")));
+                for (var i = 0; i < entries.Count; i++)
+                {
+                    var cells = rows[i + 1].Elements(w + "tc").ToArray();
+                    Assert.Equal(entries[i].StartTime, cells[0].Value);
+                    Assert.Equal("0", (string?)cells[0].Descendants(w + "bidi").Single().Attribute(w + "val"));
+                    Assert.Equal("1", (string?)cells[1].Descendants(w + "bidi").Single().Attribute(w + "val"));
+                    var text = string.Concat(cells[1].Descendants().Where(e => e.Name == w + "t" || e.Name == w + "br").Select(e => e.Name == w + "br" ? "\n" : e.Value));
+                    Assert.Equal(entries[i].Text.Replace("\r\n", "\n"), text);
+                    if (notes) Assert.Equal(entries[i].Notes, cells[2].Value);
+                    Assert.Equal("atLeast", (string?)rows[i + 1].Descendants(w + "trHeight").Single().Attribute(w + "hRule"));
+                    Assert.All(rows[i + 1].Descendants(w + "sz"), size => Assert.Equal("24", (string?)size.Attribute(w + "val")));
+                }
+                Assert.All(table.Descendants(w + "rFonts"), font => Assert.Equal("Arial", (string?)font.Attribute(w + "cs")));
+                Assert.All(table.Descendants(w + "jc"), jc => Assert.Equal("center", (string?)jc.Attribute(w + "val")));
+                var smoke = Environment.GetEnvironmentVariable("OST_EXPORT_SMOKE_DIR");
+                if (!string.IsNullOrWhiteSpace(smoke))
+                {
+                    Directory.CreateDirectory(smoke);
+                    File.Copy(path, Path.Combine(smoke, Path.GetFileName(path)), true);
+                }
+            }
+            Assert.Equal(before, System.Text.Json.JsonSerializer.Serialize(entries));
+        }
+        finally { view.TrySaveAndStop(); Directory.Delete(directory, true); }
+    }
+
+    [AvaloniaFact]
     public void ToolbarAddsAndRemovesRowsWithoutOpeningAnyPanelOrChangingSubtitleText()
     {
         var services = new ServiceCollection();
@@ -1023,4 +1093,5 @@ public partial class OstTableTests
         }
     }
 }
+
 

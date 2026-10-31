@@ -154,6 +154,8 @@ jobs:
         run: dotnet restore
 
       - name: Test OST regressions
+        env:
+          OST_EXPORT_SMOKE_DIR: ${{ runner.temp }}/ost-export-smoke
         shell: pwsh
         working-directory: subtitleedit
         run: |
@@ -174,6 +176,15 @@ jobs:
             dotnet test tests/UI/UITests.csproj -c Release --no-build --filter "FullyQualifiedName~HebrewMenuPunctuationFollowsTextWhileMenuAndShortcutsStayInPlace" --logger "console;verbosity=normal" --logger "trx;LogFileName=bidi.trx" --results-directory "$env:RUNNER_TEMP/test-results"
             if ($LASTEXITCODE -ne 0) { throw "Isolated bidi regression failed ($LASTEXITCODE)." }
           } finally { Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue }
+
+      - name: Record synthetic OST Word export fixtures for render verification
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem "$env:RUNNER_TEMP/ost-export-smoke" -Filter '*.docx')
+          if ($files.Count -ne 2) { throw 'OST export fixtures missing.' }
+          foreach ($file in $files) {
+            Write-Host ("OST_FIXTURE " + $file.Name + " " + [Convert]::ToBase64String([IO.File]::ReadAllBytes($file.FullName)))
+          }
 
       - name: Report failed tests as annotations
         if: failure()

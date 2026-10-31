@@ -902,17 +902,42 @@ namespace Nikse.SubtitleEdit.Features.Tools.OstTable
 
         internal void WriteDocx(string path, List<OstEntry> entries)
         {
+            // Match the user's OST samples in a native DOCX: Arial 12, underlined
+            // centered 14pt title, compact centered cells, TC physically on the right.
             const string ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
-            string P(string text, bool rtl = true) => "<w:p><w:pPr>" + (rtl ? "<w:bidi/>" : "") + "</w:pPr><w:r><w:t xml:space=\"preserve\">" + H(text).Replace("\n", "</w:t><w:br/><w:t xml:space=\"preserve\">") + "</w:t></w:r></w:p>";
-            string Cell(string text, bool rtl = true) => "<w:tc>" + P(text, rtl) + "</w:tc>";
-            var body = new StringBuilder(P(BuildTitle()));
-            body.Append("<w:tbl><w:tblPr><w:bidiVisual/><w:tblBorders>");
+            int[] widths = _includeNotes ? new[] { 2340, 4680, 2340 } : new[] { 2808, 6552 };
+            string P(string text, bool rtl = true, bool bold = false, bool title = false)
+            {
+                var content = H(text.Replace("\r\n", "\n").Replace('\r', '\n'))
+                    .Replace("\n", "</w:t><w:br/><w:t xml:space=\"preserve\">");
+                return "<w:p><w:pPr><w:bidi w:val=\"" + (rtl ? "1" : "0") + "\"/><w:jc w:val=\"center\"/>" +
+                    "<w:spacing w:before=\"0\" w:after=\"" + (title ? "300" : "0") + "\"/>" +
+                    (title ? "<w:keepNext/>" : "") + "</w:pPr><w:r><w:rPr>" +
+                    "<w:rFonts w:ascii=\"Arial\" w:hAnsi=\"Arial\" w:cs=\"Arial\"/>" +
+                    "<w:sz w:val=\"" + (title ? "28" : "24") + "\"/><w:szCs w:val=\"" + (title ? "28" : "24") + "\"/>" +
+                    (bold ? "<w:b/><w:bCs/>" : "") + (title ? "<w:u w:val=\"single\"/>" : "") +
+                    "</w:rPr><w:t xml:space=\"preserve\">" + content + "</w:t></w:r></w:p>";
+            }
+            string Cell(string text, int column, bool header = false) =>
+                "<w:tc><w:tcPr><w:tcW w:w=\"" + widths[column] + "\" w:type=\"dxa\"/>" +
+                "<w:vAlign w:val=\"center\"/>" + (header ? "<w:shd w:val=\"clear\" w:fill=\"F0F0F0\"/>" : "") +
+                "</w:tcPr>" + P(text, column != 0, header) + "</w:tc>";
+            string Row(string time, string text, string notes, bool header = false) =>
+                "<w:tr><w:trPr><w:trHeight w:val=\"277\" w:hRule=\"atLeast\"/><w:cantSplit/>" +
+                (header ? "<w:tblHeader/>" : "") + "</w:trPr>" + Cell(time, 0, header) + Cell(text, 1, header) +
+                (_includeNotes ? Cell(notes, 2, header) : "") + "</w:tr>";
+            var body = new StringBuilder(P(BuildTitle(), true, true, true));
+            body.Append("<w:tbl><w:tblPr><w:bidiVisual/><w:tblW w:w=\"9360\" w:type=\"dxa\"/><w:jc w:val=\"center\"/><w:tblLayout w:type=\"fixed\"/><w:tblBorders>");
             foreach (var edge in new[] { "top", "left", "bottom", "right", "insideH", "insideV" })
-                body.Append($"<w:{edge} w:val=\"single\" w:sz=\"4\"/>");
-            body.Append("</w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w=\"1800\"/><w:gridCol w:w=\"6000\"/>" + (_includeNotes ? "<w:gridCol w:w=\"1800\"/>" : "") + "</w:tblGrid><w:tr>" + Cell("TC", false) + Cell("כיתוב") + (_includeNotes ? Cell("הערות") : "") + "</w:tr>");
-            foreach (var e in entries)
-                body.Append("<w:tr>" + Cell(e.StartTime, false) + Cell(e.Text) + (_includeNotes ? Cell(e.Notes) : "") + "</w:tr>");
-            body.Append("</w:tbl><w:sectPr/>");
+                body.Append($"<w:{edge} w:val=\"single\" w:sz=\"6\" w:color=\"000000\"/>");
+            body.Append("</w:tblBorders><w:tblCellMar><w:top w:w=\"0\" w:type=\"dxa\"/><w:bottom w:w=\"0\" w:type=\"dxa\"/><w:left w:w=\"60\" w:type=\"dxa\"/><w:right w:w=\"60\" w:type=\"dxa\"/></w:tblCellMar></w:tblPr><w:tblGrid>");
+            foreach (var width in widths) body.Append($"<w:gridCol w:w=\"{width}\"/>");
+            body.Append("</w:tblGrid>" + Row("TC", "כיתוב", "הערות", true));
+            foreach (var entry in entries)
+                body.Append(Row(entry.StartTime, entry.Text, entry.Notes));
+            // A4 with explicit side margins: explicit sizing prevents Word defaults from
+            // changing the 30/70 table geometry. Rows may expand for wrapped text.
+            body.Append("</w:tbl><w:sectPr><w:pgSz w:w=\"11906\" w:h=\"16838\"/><w:pgMar w:top=\"1134\" w:right=\"1273\" w:bottom=\"1134\" w:left=\"1273\"/></w:sectPr>");
             using var stream = File.Create(path);
             using var zip = new ZipArchive(stream, ZipArchiveMode.Create);
             void Part(string name, string xml) { using var writer = new StreamWriter(zip.CreateEntry(name).Open(), new UTF8Encoding(false)); writer.Write(xml); }
@@ -997,4 +1022,5 @@ namespace Nikse.SubtitleEdit.Features.Tools.OstTable
         public static T Also<T>(this T obj, Action<T> action) { action(obj); return obj; }
     }
 }
+
 
