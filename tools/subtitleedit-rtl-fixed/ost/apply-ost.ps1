@@ -459,3 +459,7 @@ Set-Content $path $text -Encoding utf8
 
 python "$source/apply-native-guide.py"
 if ($LASTEXITCODE -ne 0) { throw 'Native translation guide integration failed.' }
+
+Copy-Item "$source/EpisodeContextDiscovery.cs" 'src/ui/Features/Main/MainHelpers/EpisodeContextDiscovery.cs' -Force
+Copy-Item "$source/MainViewModel.EpisodeDiscovery.cs" 'src/ui/Features/Main/MainViewModel.EpisodeDiscovery.cs' -Force
+Copy-Item "$source/EpisodeDiscoveryTests.cs" 'tests/UI/Features/Main/EpisodeDiscoveryTests.cs' -Force

@@ -39,6 +39,7 @@ public partial class MainViewModel
         var originalContext = ProjectEpisodeContext.Fingerprint(profile);
         var document = _subtitleFileName;
         var generation = _ostDocumentGeneration;
+        var documentHash = GetFastHash();
         var draft = JsonSerializer.Deserialize<List<EpisodeContextDocument>>(JsonSerializer.Serialize(profile.PreviousEpisodes ?? new()))!;
         await ProjectDialog("פרקים קודמים — חומר רקע", (panel, window) =>
         {
@@ -64,6 +65,8 @@ public partial class MainViewModel
                 }
                 status.Text = $"{draft.Count} פרקים; {draft.Count(e => e.IncludeInAi)} מסומנים להקשר. השינויים יישמרו רק בלחיצה על שמור.";
             }
+            var discovery = AttachEpisodeDiscoveryUi(panel, window, profile, () => draft, next => { draft = next; Refresh(); },
+                () => document == _subtitleFileName && generation == _ostDocumentGeneration && documentHash == GetFastHash() && ActiveProfile?.Id == profile.Id && ProjectEpisodeContext.Fingerprint(profile) == originalContext, cancel.Token);
             ActionButton(panel, "בחר קובצי פרקים קודמים…", async () =>
             {
                 var files = await window.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
@@ -92,7 +95,8 @@ public partial class MainViewModel
             });
             ActionButton(panel, "שמור פרקי רקע בפרויקט", () =>
             {
-                if (document != _subtitleFileName || generation != _ostDocumentGeneration) throw new InvalidOperationException("המסמך השתנה; פתח את החלון מחדש.");
+                if (discovery.Busy) throw new InvalidOperationException("המתן לסיום הסריקה או בטל אותה לפני השמירה.");
+                if (document != _subtitleFileName || generation != _ostDocumentGeneration || documentHash != GetFastHash()) throw new InvalidOperationException("המסמך השתנה; פתח את החלון מחדש.");
                 if (ProjectEpisodeContext.Fingerprint(profile) != originalContext) throw new InvalidOperationException("פרקי הרקע השתנו בחלון אחר; פתח מחדש כדי לא לדרוס שינוי חדש.");
                 SaveEpisodeContext(profile, draft); window.Close(); return Task.CompletedTask;
             });
