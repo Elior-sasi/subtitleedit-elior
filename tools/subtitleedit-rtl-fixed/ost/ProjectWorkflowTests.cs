@@ -413,7 +413,7 @@ public partial class OstTableTests
         var owner = new Window { Width = 1500, Height = 900 }; MainView.NextHostWindow = owner; var main = new MainView(); owner.Content = main;
         try
         {
-            owner.Show(); Dispatcher.UIThread.RunJobs(); var vm = (MainViewModel)main.DataContext!; owner.SuppressSaveChangesPromptOnClose(vm);
+            owner.Show(); Dispatcher.UIThread.RunJobs(); var vm = (MainViewModel)main.DataContext!; owner.SuppressSaveChangesPromptOnClose(vm); vm.StopBackgroundWork();
             vm.Subtitles.Clear(); vm.Subtitles.Add(new SubtitleLineViewModel { Text = "<i>שלום</i>", StartTime = TimeSpan.FromSeconds(1), EndTime = TimeSpan.FromSeconds(3) });
             FeedbackSet(vm, "_subtitleFileName", ""); FeedbackSet(vm, "_customDocument", "");
             var hash = vm.GetFastHash();
@@ -453,7 +453,7 @@ public partial class OstTableTests
         var owner = new Window { Width = 1500, Height = 900 }; MainView.NextHostWindow = owner; var main = new MainView(); owner.Content = main;
         try
         {
-            owner.Show(); Dispatcher.UIThread.RunJobs(); var vm = (MainViewModel)main.DataContext!; owner.SuppressSaveChangesPromptOnClose(vm);
+            owner.Show(); Dispatcher.UIThread.RunJobs(); var vm = (MainViewModel)main.DataContext!; owner.SuppressSaveChangesPromptOnClose(vm); vm.StopBackgroundWork();
             var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".srt");
             FeedbackSet(vm, "_subtitleFileName", path); FeedbackSet(vm, "_customDocument", path); FeedbackSet(vm, "_customGeneration", Field<int>(vm, "_ostDocumentGeneration"));
             var profile = new ProjectProfile { Name = "פרויקט בדיקה", Guide = "מדריך בדיקה" }; Field<System.Collections.Generic.List<ProjectProfile>>(vm, "_customProfiles").Add(profile);
@@ -467,9 +467,14 @@ public partial class OstTableTests
                 FeedbackItem(vm, caption).RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent)); await FeedbackDrain();
                 var notice = Assert.Single(owner.OwnedWindows, w => w.Name == "CustomActionNotice"); Assert.Contains("בחר כתובית עבודה", Assert.Single(notice.GetVisualDescendants().OfType<TextBlock>(), t => t.Name == "CustomActionNoticeText").Text); notice.Close(); await FeedbackDrain();
             }
-            vm.Subtitles.Add(row); row.IsReferenceOnly = true; vm.SubtitleGrid.SelectedItem = row; await FeedbackDrain();
+            vm.Subtitles.Add(row);
+            var reference = new SubtitleLineViewModel { Number = 2, Text = "Read-only reference", IsReferenceOnly = true, StartTime = TimeSpan.FromSeconds(1), EndTime = TimeSpan.FromSeconds(3) };
+            vm.Subtitles.Add(reference);
+            vm.SubtitleGrid.SelectedItems!.Clear(); vm.SubtitleGrid.SelectedItems.Add(reference);
+            Assert.True(reference.IsReferenceOnly); Assert.Same(reference, Assert.Single(vm.SubtitleGridSelectedItemsWithReference));
             FeedbackItem(vm, "בדוק מול המקור / תרגם עם המדריך…").RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent)); await FeedbackDrain();
-            var rejected = Assert.Single(owner.OwnedWindows, w => w.Name == "CustomActionNotice"); rejected.Close(); row.IsReferenceOnly = false; hash = vm.GetFastHash();
+            var rejected = Assert.Single(owner.OwnedWindows, w => w.Name == "CustomActionNotice"); rejected.Close();
+            vm.Subtitles.Remove(reference); hash = vm.GetFastHash();
             foreach (var pair in new[] {
                 ("בדוק מול המקור / תרגם עם המדריך…", "בדיקה מול המקור — פרויקט בדיקה"),
                 ("אתר שמות ומונחים בקובץ…", "אתר שמות ומונחים בקובץ"),
@@ -496,7 +501,7 @@ public partial class OstTableTests
         var owner = new Window { Width = 1500, Height = 900 }; MainView.NextHostWindow = owner; var main = new MainView(); owner.Content = main;
         try
         {
-            owner.Show(); Dispatcher.UIThread.RunJobs(); var vm = (MainViewModel)main.DataContext!; owner.SuppressSaveChangesPromptOnClose(vm);
+            owner.Show(); Dispatcher.UIThread.RunJobs(); var vm = (MainViewModel)main.DataContext!; owner.SuppressSaveChangesPromptOnClose(vm); vm.StopBackgroundWork();
             var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".srt");
             FeedbackSet(vm, "_subtitleFileName", path); FeedbackSet(vm, "_customDocument", path); FeedbackSet(vm, "_customGeneration", Field<int>(vm, "_ostDocumentGeneration"));
             Field<System.Collections.Generic.List<ProjectProfile>>(vm, "_customProfiles").Clear(); Field<ProjectWork>(vm, "_customWork").ProfileId = "";
