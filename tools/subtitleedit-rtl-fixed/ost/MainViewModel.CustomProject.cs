@@ -36,7 +36,7 @@ public partial class MainViewModel
     {
         CustomWindowsIntegration.Initialize();
         var menu = new MenuFlyout();
-        void Item(string title, Func<Task> action) { var item = new MenuItem { Header = MenuCaption(title), FlowDirection = FlowDirection.LeftToRight }; AutomationProperties.SetName(item, title); item.Click += async (_, _) => { await Task.Yield(); try { await action(); } catch (Exception e) { ShowStatus(e.Message, 8000); } }; menu.Items.Add(item); }
+        void Item(string title, Func<Task> action, bool saved = false, bool project = false, bool selection = false) { var item = new MenuItem { Header = MenuCaption(title), FlowDirection = FlowDirection.LeftToRight }; AutomationProperties.SetName(item, title); item.Click += async (_, _) => { await Task.Yield(); await RunCustomMenuAction(title, action, saved || project || selection, project, selection); }; menu.Items.Add(item); }
         Item("תסריט לכתוביות…", OpenScriptToSubtitles);
         Item("תסריט שונה מהדיבור — השוואה ואישור…", () => OpenScriptTranscriptReview());
         Item("השוואת גרסאות — טקסט או זמנים…", ShowCompare);
@@ -44,23 +44,23 @@ public partial class MainViewModel
         Item("קבע נקודת בדיקה לשינויים הבאים", () => { SetProReviewBaseline(); return Task.CompletedTask; });
         Item("הצמדה לחילופי שוטים — הצעות לאישור…", OpenProShotPreview);
         Item("רוחב טקסט ואזור בטוח — בדיקה…", OpenProWidthReview);
-        Item("מילון והנחיות הפרויקט…", OpenProjectProfile);
-        Item("פרקים קודמים — חומר רקע…", OpenEpisodeContext);
-        Item("טען וסנכרן מקור באנגלית…", OpenEnglishReference);
-        Item("בדוק מול המקור / תרגם עם המדריך…", ReviewEnglish);
-        Item("אתר שמות ומונחים בקובץ…", FindProjectTerms);
-        Item("משפט חוזר / זיכרון תרגום…", SearchTranslationMemory);
+        Item("מילון והנחיות הפרויקט…", OpenProjectProfile, saved: true);
+        Item("פרקים קודמים — חומר רקע…", OpenEpisodeContext, project: true);
+        Item("טען וסנכרן מקור באנגלית…", OpenEnglishReference, saved: true);
+        Item("בדוק מול המקור / תרגם עם המדריך…", ReviewEnglish, project: true, selection: true);
+        Item("אתר שמות ומונחים בקובץ…", FindProjectTerms, project: true);
+        Item("משפט חוזר / זיכרון תרגום…", SearchTranslationMemory, project: true, selection: true);
         Item("התאם כתוביות לגרסת וידאו אחרת…", OpenVideoEditionSync);
         Item("תיקון תזמוני CC לפי הדיבור…", OpenCcTiming);
         Item("גיבוי לתיקיית ענן מסונכרנת…", OpenProjectBackup);
-        Item("ייבא מדריך וזיכרון מגיבוי…", ImportArchivedGuide);
-        Item("הערה ומצב בדיקה לשורה…", EditProjectNote);
-        Item("שאלה לבמאי על השורה הנבחרת…", () => EditProjectNoteCore(true));
-        Item("טבלת שאלות לבמאי / ייצוא…", OpenDirectorQuestions);
+        Item("ייבא מדריך וזיכרון מגיבוי…", ImportArchivedGuide, saved: true);
+        Item("הערה ומצב בדיקה לשורה…", EditProjectNote, selection: true);
+        Item("שאלה לבמאי על השורה הנבחרת…", () => EditProjectNoteCore(true), selection: true);
+        Item("טבלת שאלות לבמאי / ייצוא…", OpenDirectorQuestions, saved: true);
         Item("הקודמת לבדיקה", () => { NavigateProjectReview(-1); return Task.CompletedTask; });
         Item("הבאה לבדיקה", () => { NavigateProjectReview(1); return Task.CompletedTask; });
-        Item("בדוק עקביות שמות ומונחים…", CheckProjectTerms);
-        Item("דוח מסירה קצר…", ProjectDeliveryReport);
+        Item("בדוק עקביות שמות ומונחים…", CheckProjectTerms, project: true);
+        Item("דוח מסירה קצר…", ProjectDeliveryReport, saved: true);
         Item("חיפוש בשורות OST…", SearchOstRows);
         Item("גיבוי ושחזור הגדרות…", OpenSettingsBackups);
         Item("Gemini - מפתח ובחירת מודל…", ConfigureGemini);
@@ -99,13 +99,74 @@ public partial class MainViewModel
         }
     }
 
+    // User actions must explain unmet prerequisites in a visible, accessible dialog.
+    // Monitoring keeps its non-modal EnsureCustomProject path; no automatic save/AI call.
+    private async Task RunCustomMenuAction(string title, Func<Task> action, bool saved, bool project, bool selection)
+    {
+        try
+        {
+            if (saved && string.IsNullOrWhiteSpace(_subtitleFileName))
+            {
+                await ShowCustomActionNotice(title, "שמור תחילה את קובץ הכתוביות: קובץ ← שמור בשם. לאחר השמירה הפעל שוב את הפעולה.");
+                return;
+            }
+            if (saved && !EnsureCustomProject()) return;
+            if (project && ActiveProfile == null)
+            {
+                await ShowCustomActionNotice(title, "לא נבחר פרויקט לקובץ הזה. צור או טען פרויקט, שמור אותו ואז הפעל שוב את הפעולה.", OpenProjectProfile);
+                return;
+            }
+            if (selection)
+            {
+                Nikse.SubtitleEdit.Logic.TableViewExtras.SyncSelectedItemsWithSelection(SubtitleGrid);
+                var rows = SubtitleGridSelectedItems.ToList();
+                if (rows.Count == 0 || rows.Any(r => r.IsReferenceOnly || r.IsDefault || r.IsComment))
+                {
+                    await ShowCustomActionNotice(title, "בחר כתובית עבודה ברשימה הראשית. שורות מקור, ברירת מחדל והערות אינן יעד לעריכה. לאחר הבחירה הפעל שוב את הפעולה.");
+                    return;
+                }
+            }
+            await action();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception e) { await ShowCustomActionNotice(title, e.Message); }
+    }
+
+    private Task ShowCustomActionNotice(string action, string message, Func<Task>? configure = null) =>
+        ProjectDialog("נדרש שלב נוסף — " + action, (panel, dialog) =>
+        {
+            dialog.Name = "CustomActionNotice";
+            dialog.Width = 620; dialog.Height = 360;
+            var text = Label(message); text.Name = "CustomActionNoticeText";
+            AutomationProperties.SetName(text, message); panel.Children.Add(text);
+            if (configure != null)
+                ActionButton(panel, "פתח מילון והנחיות הפרויקט…", async () => { dialog.Close(); await configure(); });
+        });
+
     private static TextBlock MenuCaption(string text) => new() { Text = text, FlowDirection = FlowDirection.RightToLeft, TextWrapping = TextWrapping.Wrap };
     private static TextBlock Label(string text) => new() { Text = text, FontSize = 16, FlowDirection = FlowDirection.RightToLeft, TextWrapping = TextWrapping.Wrap };
     private static TextBox Field(string text = "", bool multiline = false) => new() { Text = text, FontSize = 16, FlowDirection = FlowDirection.RightToLeft, AcceptsReturn = multiline, TextWrapping = TextWrapping.Wrap, MinHeight = multiline ? 110 : 36 };
     private void ActionButton(StackPanel panel, string text, Func<Task> action)
     {
         var b = new Button { Content = text, FontSize = 16, MinHeight = 36, HorizontalAlignment = HorizontalAlignment.Stretch }; AutomationProperties.SetName(b, text);
-        b.Click += async (_, _) => { b.IsEnabled = false; try { await action(); } catch (Exception e) { ShowStatus(e.Message, 10000); } finally { b.IsEnabled = true; } }; panel.Children.Add(b);
+        TextBlock? error = null;
+        b.Click += async (_, _) =>
+        {
+            if (!b.IsEnabled) return;
+            b.IsEnabled = false; if (error != null) error.IsVisible = false;
+            try { await action(); }
+            catch (OperationCanceledException) { }
+            catch (Exception e)
+            {
+                ShowStatus(e.Message, 10000);
+                if (TopLevel.GetTopLevel(b) != null)
+                {
+                    if (error == null) { error = Label(""); error.Name = "CustomActionError"; panel.Children.Insert(panel.Children.IndexOf(b) + 1, error); }
+                    error.Text = e.Message; AutomationProperties.SetName(error, e.Message); error.IsVisible = true;
+                }
+            }
+            finally { b.IsEnabled = true; }
+        }; panel.Children.Add(b);
     }
     private Task ProjectDialog(string title, Action<StackPanel, Window> build)
     {
@@ -174,7 +235,7 @@ public partial class MainViewModel
         {
             var choices = new ComboBox { ItemsSource = _customProfiles, DisplayMemberBinding = new Avalonia.Data.Binding("Name"), SelectedItem = ActiveProfile, FontSize = 16, MinWidth = 300 };
             p.Children.Add(Label("פרויקט פעיל — בדוק לפני כל פעולת AI")); p.Children.Add(choices);
-            ActionButton(p, "טען את הפרויקט הנבחר", () => { if (choices.SelectedItem is ProjectProfile s) { _customWork.ProfileId = s.Id; SaveCustomWork(); w.Close(); return OpenProjectProfile(); } return Task.CompletedTask; });
+            ActionButton(p, "טען את הפרויקט הנבחר", () => { if (choices.SelectedItem is ProjectProfile s) { _customWork.ProfileId = s.Id; SaveCustomWork(); w.Close(); return OpenProjectProfile(); } throw new InvalidOperationException("בחר פרויקט מהרשימה תחילה, או צור פרויקט חדש בשדות שמתחתיה."); });
             var edit = ActiveProfile ?? new ProjectProfile();
             var name = Field(edit.Name); var alias = Field(edit.Alias); var folder = Field(edit.Folder); var prompt = Field(edit.Prompt, true); var guide = Field(edit.Guide, true);
             p.Children.Add(Label("שם הפרויקט")); p.Children.Add(name); p.Children.Add(Label("כינוי בשם הקובץ, למשל Avatar (ללא עונה ופרק)")); p.Children.Add(alias);

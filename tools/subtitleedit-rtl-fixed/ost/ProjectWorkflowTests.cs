@@ -9,6 +9,7 @@ using Avalonia.Headless.XUnit;
 using Avalonia.Headless;
 using Avalonia.Controls;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Microsoft.Extensions.DependencyInjection;
 using Nikse.SubtitleEdit;
 using Nikse.SubtitleEdit.Features.Main;
@@ -385,6 +386,134 @@ public partial class OstTableTests
             if (Directory.Exists(backups)) foreach (var file in Directory.GetFiles(backups).Except(prior)) File.Delete(file);
             Directory.Delete(root, true);
         }
+    }
+
+    private static System.Collections.Generic.IEnumerable<MenuItem> FeedbackMenuItems(System.Collections.IEnumerable items)
+    {
+        foreach (var item in items.OfType<MenuItem>())
+        {
+            yield return item;
+            foreach (var nested in FeedbackMenuItems(item.Items)) yield return nested;
+        }
+    }
+    private static MenuItem FeedbackItem(MainViewModel vm, string caption) =>
+        Assert.Single(FeedbackMenuItems(vm.Menu.Items), m => (m.Header as TextBlock)?.Text == caption);
+    private static async Task FeedbackDrain()
+    {
+        await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+        Dispatcher.UIThread.RunJobs();
+    }
+    private static void FeedbackSet(MainViewModel vm, string field, object value) =>
+        typeof(MainViewModel).GetField(field, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(vm, value);
+
+    [AvaloniaFact]
+    public async Task ProjectMenuClicksExplainUnsavedDocumentAndMissingProfileWithoutChangingSubtitles()
+    {
+        var services = new ServiceCollection(); services.AddSubtitleEditServices(); Locator.Services = services.BuildServiceProvider();
+        var owner = new Window { Width = 1500, Height = 900 }; MainView.NextHostWindow = owner; var main = new MainView(); owner.Content = main;
+        try
+        {
+            owner.Show(); Dispatcher.UIThread.RunJobs(); var vm = (MainViewModel)main.DataContext!; owner.SuppressSaveChangesPromptOnClose(vm);
+            vm.Subtitles.Clear(); vm.Subtitles.Add(new SubtitleLineViewModel { Text = "<i>שלום</i>", StartTime = TimeSpan.FromSeconds(1), EndTime = TimeSpan.FromSeconds(3) });
+            FeedbackSet(vm, "_subtitleFileName", ""); FeedbackSet(vm, "_customDocument", "");
+            var hash = vm.GetFastHash();
+            var captions = new[] { "מילון והנחיות הפרויקט…", "פרקים קודמים — חומר רקע…", "טען וסנכרן מקור באנגלית…", "בדוק מול המקור / תרגם עם המדריך…", "אתר שמות ומונחים בקובץ…", "משפט חוזר / זיכרון תרגום…", "הערה ומצב בדיקה לשורה…", "שאלה לבמאי על השורה הנבחרת…", "טבלת שאלות לבמאי / ייצוא…", "בדוק עקביות שמות ומונחים…" };
+            foreach (var caption in captions)
+            {
+                FeedbackItem(vm, caption).RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent)); await FeedbackDrain();
+                var notice = Assert.Single(owner.OwnedWindows, w => w.Name == "CustomActionNotice");
+                var text = notice.FindControl<TextBlock>("CustomActionNoticeText")!;
+                Assert.Contains("שמור תחילה", text.Text); Assert.Equal(text.Text, Avalonia.Automation.AutomationProperties.GetName(text));
+                notice.Close(); await FeedbackDrain(); Assert.Equal(hash, vm.GetFastHash());
+            }
+            var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".srt");
+            FeedbackSet(vm, "_subtitleFileName", path); FeedbackSet(vm, "_customDocument", path);
+            FeedbackSet(vm, "_customGeneration", Field<int>(vm, "_ostDocumentGeneration"));
+            Field<System.Collections.Generic.List<ProjectProfile>>(vm, "_customProfiles").Clear(); Field<ProjectWork>(vm, "_customWork").ProfileId = "";
+            foreach (var caption in new[] { captions[1], captions[3], captions[4], captions[5], captions[9] })
+            {
+                FeedbackItem(vm, caption).RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent)); await FeedbackDrain();
+                var notice = Assert.Single(owner.OwnedWindows, w => w.Name == "CustomActionNotice");
+                Assert.Contains("לא נבחר פרויקט", notice.FindControl<TextBlock>("CustomActionNoticeText")!.Text);
+                var configure = Assert.Single(notice.GetVisualDescendants().OfType<Button>(), b => b.Content as string == "פתח מילון והנחיות הפרויקט…");
+                configure.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent)); await FeedbackDrain();
+                var profileDialog = Assert.Single(owner.OwnedWindows, w => w.Title == "מילון והנחיות הפרויקט");
+                profileDialog.Close(); await FeedbackDrain(); Assert.Equal(hash, vm.GetFastHash());
+            }
+            Assert.False(File.Exists(Path.ChangeExtension(path, ".sework.json")));
+        }
+        finally { FeedbackSet((MainViewModel)main.DataContext!, "_subtitleFileName", ""); FeedbackSet((MainViewModel)main.DataContext!, "_customDocument", ""); foreach (var w in owner.OwnedWindows.ToArray()) w.Close(); owner.Close(); }
+    }
+
+    [AvaloniaFact]
+    public async Task ReadyProjectMenuClicksOpenRealDialogsAndRejectReferenceOnlySelection()
+    {
+        var services = new ServiceCollection(); services.AddSubtitleEditServices(); Locator.Services = services.BuildServiceProvider();
+        var owner = new Window { Width = 1500, Height = 900 }; MainView.NextHostWindow = owner; var main = new MainView(); owner.Content = main;
+        try
+        {
+            owner.Show(); Dispatcher.UIThread.RunJobs(); var vm = (MainViewModel)main.DataContext!; owner.SuppressSaveChangesPromptOnClose(vm);
+            var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".srt");
+            FeedbackSet(vm, "_subtitleFileName", path); FeedbackSet(vm, "_customDocument", path); FeedbackSet(vm, "_customGeneration", Field<int>(vm, "_ostDocumentGeneration"));
+            var profile = new ProjectProfile { Name = "פרויקט בדיקה", Guide = "מדריך בדיקה" }; Field<System.Collections.Generic.List<ProjectProfile>>(vm, "_customProfiles").Add(profile);
+            var work = Field<ProjectWork>(vm, "_customWork"); work.ProfileId = profile.Id; work.ReferenceText = "1\n00:00:01,000 --> 00:00:03,000\nHello there\n"; work.AlignmentConfirmed = true;
+            var row = new SubtitleLineViewModel { Number = 1, Text = "שלום", StartTime = TimeSpan.FromSeconds(1), EndTime = TimeSpan.FromSeconds(3) };
+            vm.Subtitles.Clear(); vm.Subtitles.Add(row); vm.SubtitleGrid.SelectedItems?.Clear(); vm.SubtitleGrid.SelectedItem = null;
+            var hash = vm.GetFastHash(); var before = System.Text.Json.JsonSerializer.Serialize(profile);
+            foreach (var caption in new[] { "בדוק מול המקור / תרגם עם המדריך…", "משפט חוזר / זיכרון תרגום…", "הערה ומצב בדיקה לשורה…", "שאלה לבמאי על השורה הנבחרת…" })
+            {
+                FeedbackItem(vm, caption).RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent)); await FeedbackDrain();
+                var notice = Assert.Single(owner.OwnedWindows, w => w.Name == "CustomActionNotice"); Assert.Contains("בחר כתובית עבודה", notice.FindControl<TextBlock>("CustomActionNoticeText")!.Text); notice.Close(); await FeedbackDrain();
+            }
+            row.IsReferenceOnly = true; vm.SubtitleGrid.SelectedItem = row; await FeedbackDrain();
+            FeedbackItem(vm, "בדוק מול המקור / תרגם עם המדריך…").RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent)); await FeedbackDrain();
+            var rejected = Assert.Single(owner.OwnedWindows, w => w.Name == "CustomActionNotice"); rejected.Close(); row.IsReferenceOnly = false;
+            foreach (var pair in new[] {
+                ("בדוק מול המקור / תרגם עם המדריך…", "בדיקה מול המקור — פרויקט בדיקה"),
+                ("אתר שמות ומונחים בקובץ…", "אתר שמות ומונחים בקובץ"),
+                ("משפט חוזר / זיכרון תרגום…", "משפט חוזר / זיכרון תרגום"),
+                ("בדוק עקביות שמות ומונחים…", "בדיקת עקביות מול מילון הפרויקט"),
+                ("פרקים קודמים — חומר רקע…", "פרקים קודמים — חומר רקע"),
+                ("הערה ומצב בדיקה לשורה…", "הערה פנימית ומצב בדיקה"),
+                ("שאלה לבמאי על השורה הנבחרת…", "הערה פנימית ומצב בדיקה") })
+            {
+                vm.SubtitleGrid.SelectedItems?.Clear(); vm.SubtitleGrid.SelectedItem = row; await FeedbackDrain();
+                FeedbackItem(vm, pair.Item1).RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent)); await FeedbackDrain();
+                var dialog = Assert.Single(owner.OwnedWindows, w => w.Title == pair.Item2); Assert.NotEqual("CustomActionNotice", dialog.Name); dialog.Close(); await FeedbackDrain();
+                Assert.Equal(hash, vm.GetFastHash()); Assert.Equal(before, System.Text.Json.JsonSerializer.Serialize(profile)); Assert.Empty(work.Notes);
+            }
+            Assert.False(File.Exists(Path.ChangeExtension(path, ".sework.json")));
+        }
+        finally { FeedbackSet((MainViewModel)main.DataContext!, "_subtitleFileName", ""); FeedbackSet((MainViewModel)main.DataContext!, "_customDocument", ""); foreach (var w in owner.OwnedWindows.ToArray()) w.Close(); owner.Close(); }
+    }
+
+    [AvaloniaFact]
+    public async Task ProjectLoadButtonShowsInlineErrorAndSplitExplainsMissingVideoOrLocks()
+    {
+        var services = new ServiceCollection(); services.AddSubtitleEditServices(); Locator.Services = services.BuildServiceProvider();
+        var owner = new Window { Width = 1500, Height = 900 }; MainView.NextHostWindow = owner; var main = new MainView(); owner.Content = main;
+        try
+        {
+            owner.Show(); Dispatcher.UIThread.RunJobs(); var vm = (MainViewModel)main.DataContext!; owner.SuppressSaveChangesPromptOnClose(vm);
+            var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".srt");
+            FeedbackSet(vm, "_subtitleFileName", path); FeedbackSet(vm, "_customDocument", path); FeedbackSet(vm, "_customGeneration", Field<int>(vm, "_ostDocumentGeneration"));
+            Field<System.Collections.Generic.List<ProjectProfile>>(vm, "_customProfiles").Clear(); Field<ProjectWork>(vm, "_customWork").ProfileId = "";
+            FeedbackItem(vm, "מילון והנחיות הפרויקט…").RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent)); await FeedbackDrain();
+            var dialog = Assert.Single(owner.OwnedWindows, w => w.Title == "מילון והנחיות הפרויקט");
+            var load = Assert.Single(dialog.GetVisualDescendants().OfType<Button>(), b => b.Content as string == "טען את הפרויקט הנבחר");
+            load.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent)); await FeedbackDrain();
+            var error = Assert.Single(dialog.GetVisualDescendants().OfType<TextBlock>(), t => t.Name == "CustomActionError"); Assert.Contains("בחר פרויקט מהרשימה", error.Text); Assert.True(error.IsVisible); Assert.True(load.IsEnabled); dialog.Close();
+            FeedbackSet(vm, "_videoFileName", ""); var hash = vm.GetFastHash();
+            foreach (var locked in new[] { false, true })
+            {
+                vm.LockTimeCodes = locked;
+                var split = Assert.Single(FeedbackMenuItems(vm.Menu.Items), m => m.Name == "ProSplitAtCaretAndVideo");
+                split.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent)); await FeedbackDrain();
+                var notice = Assert.Single(owner.OwnedWindows, w => w.Name == "CustomActionNotice"); Assert.Contains(locked ? "נעולים" : "וידאו", notice.FindControl<TextBlock>("CustomActionNoticeText")!.Text); notice.Close(); await FeedbackDrain(); Assert.Equal(hash, vm.GetFastHash());
+            }
+            vm.LockTimeCodes = false;
+        }
+        finally { FeedbackSet((MainViewModel)main.DataContext!, "_subtitleFileName", ""); FeedbackSet((MainViewModel)main.DataContext!, "_customDocument", ""); foreach (var w in owner.OwnedWindows.ToArray()) w.Close(); owner.Close(); }
     }
 
 }

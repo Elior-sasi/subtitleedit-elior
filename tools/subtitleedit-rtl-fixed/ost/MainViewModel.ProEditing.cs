@@ -113,10 +113,11 @@ public partial class MainViewModel
         flyout.Items.Add(new Separator());
         // Keep the editor caret: menu focus does not move it. The native split manager
         // owns markup, Undo and reference handling; no guessed word timestamps here.
-        Item("פצל בסמן הטקסט ובמיקום הנוכחי בווידאו", "ProSplitAtCaretAndVideo", () =>
+        AsyncItem("פצל בסמן הטקסט ובמיקום הנוכחי בווידאו", "ProSplitAtCaretAndVideo", async () =>
         {
-            if (AreTimeCodesLocked || string.IsNullOrEmpty(_videoFileName)) return;
-            if (!PrepareProSingleWorkingRow()) return;
+            if (AreTimeCodesLocked) { await ShowCustomActionNotice("פיצול בסמן ובווידאו", "התזמונים נעולים. בטל את נעילת התזמונים לפני הפיצול."); return; }
+            if (string.IsNullOrEmpty(_videoFileName)) { await ShowCustomActionNotice("פיצול בסמן ובווידאו", "פתח קובץ וידאו תחילה, והצב את הנגן בנקודת הפיצול."); return; }
+            if (!PrepareProSingleWorkingRow()) { await ShowCustomActionNotice("פיצול בסמן ובווידאו", "בחר כתובית עבודה אחת ברשימה הראשית לפני הפיצול."); return; }
             var change = BeginProToolApply("פיצול בסמן ובמיקום הווידאו");
             EndToolApply(change, SplitAtVideoPositionAndTextBoxCursorPosition);
         });
