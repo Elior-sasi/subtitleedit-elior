@@ -430,6 +430,7 @@ public partial class OstTableTests
             FeedbackSet(vm, "_subtitleFileName", path); FeedbackSet(vm, "_customDocument", path);
             FeedbackSet(vm, "_customGeneration", Field<int>(vm, "_ostDocumentGeneration"));
             Field<System.Collections.Generic.List<ProjectProfile>>(vm, "_customProfiles").Clear(); Field<ProjectWork>(vm, "_customWork").ProfileId = "";
+            hash = vm.GetFastHash(); // Naming the fixture itself is a native document-hash change.
             foreach (var caption in new[] { captions[1], captions[3], captions[4], captions[5], captions[9] })
             {
                 FeedbackItem(vm, caption).RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent)); await FeedbackDrain();
@@ -458,7 +459,7 @@ public partial class OstTableTests
             var profile = new ProjectProfile { Name = "פרויקט בדיקה", Guide = "מדריך בדיקה" }; Field<System.Collections.Generic.List<ProjectProfile>>(vm, "_customProfiles").Add(profile);
             var work = Field<ProjectWork>(vm, "_customWork"); work.ProfileId = profile.Id; work.ReferenceText = "1\n00:00:01,000 --> 00:00:03,000\nHello there\n"; work.AlignmentConfirmed = true;
             var row = new SubtitleLineViewModel { Number = 1, Text = "שלום", StartTime = TimeSpan.FromSeconds(1), EndTime = TimeSpan.FromSeconds(3) };
-            vm.Subtitles.Clear(); vm.Subtitles.Add(row); vm.SubtitleGrid.SelectedItems?.Clear(); vm.SubtitleGrid.SelectedItem = null; vm.SubtitleGrid.Selection.Clear();
+            vm.Subtitles.Clear(); vm.SubtitleGrid.SelectedItems?.Clear(); vm.SubtitleGrid.SelectedItem = null; vm.SubtitleGrid.Selection.Clear();
             var hash = vm.GetFastHash(); var before = System.Text.Json.JsonSerializer.Serialize(profile);
             foreach (var caption in new[] { "בדוק מול המקור / תרגם עם המדריך…", "משפט חוזר / זיכרון תרגום…", "הערה ומצב בדיקה לשורה…", "שאלה לבמאי על השורה הנבחרת…" })
             {
@@ -466,9 +467,9 @@ public partial class OstTableTests
                 FeedbackItem(vm, caption).RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent)); await FeedbackDrain();
                 var notice = Assert.Single(owner.OwnedWindows, w => w.Name == "CustomActionNotice"); Assert.Contains("בחר כתובית עבודה", Assert.Single(notice.GetVisualDescendants().OfType<TextBlock>(), t => t.Name == "CustomActionNoticeText").Text); notice.Close(); await FeedbackDrain();
             }
-            row.IsReferenceOnly = true; vm.SubtitleGrid.SelectedItem = row; await FeedbackDrain();
+            vm.Subtitles.Add(row); row.IsReferenceOnly = true; vm.SubtitleGrid.SelectedItem = row; await FeedbackDrain();
             FeedbackItem(vm, "בדוק מול המקור / תרגם עם המדריך…").RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent)); await FeedbackDrain();
-            var rejected = Assert.Single(owner.OwnedWindows, w => w.Name == "CustomActionNotice"); rejected.Close(); row.IsReferenceOnly = false;
+            var rejected = Assert.Single(owner.OwnedWindows, w => w.Name == "CustomActionNotice"); rejected.Close(); row.IsReferenceOnly = false; hash = vm.GetFastHash();
             foreach (var pair in new[] {
                 ("בדוק מול המקור / תרגם עם המדריך…", "בדיקה מול המקור — פרויקט בדיקה"),
                 ("אתר שמות ומונחים בקובץ…", "אתר שמות ומונחים בקובץ"),

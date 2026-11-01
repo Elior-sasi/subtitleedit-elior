@@ -456,3 +456,6 @@ $text = $text.Replace($needle, $needle + @'
 Set-Content $path $text -Encoding utf8
 
 
+
+python "$source/apply-native-guide.py"
+if ($LASTEXITCODE -ne 0) { throw 'Native translation guide integration failed.' }
