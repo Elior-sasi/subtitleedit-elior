@@ -8,6 +8,8 @@ for name, destination in [
     ('MainViewModel.NativeGuide.cs', 'src/ui/Features/Main'),
     ('CustomNativeTranslation.cs', 'src/ui/Features/Main/MainHelpers'),
     ('NativeGuideTests.cs', 'tests/UI/Features/Main'),
+    ('GuideVerification.cs', 'src/ui/Features/Main/MainHelpers'),
+    ('GuideVerificationTests.cs', 'tests/UI/Features/Main'),
 ]:
     shutil.copyfile(source / name, Path(destination) / name)
 
@@ -25,9 +27,40 @@ patch('src/libuilogic/AutoTranslate/GeminiTranslate.cs',
       '            var input = "{ \\"contents\\": [ { \\"role\\": \\"user\\", \\"parts\\": [{ \\"text\\": \\"" + Json.EncodeJsonText(prompt) + "\\\\n\\\\n" + Json.EncodeJsonText(text.Trim()) + "\\" }]}]}";'.replace('\\\\"', '\\"'),
       '            var requestText = CustomGuidePrompt == null ? prompt + "\\n\\n" + text.Trim() : CustomGuidePrompt(prompt, text.Trim());\n'
       '            var input = "{ \\"contents\\": [ { \\"role\\": \\"user\\", \\"parts\\": [{ \\"text\\": \\"" + Json.EncodeJsonText(requestText) + "\\" }]}]}";'.replace('\\\\"', '\\"'))
+
+patch('src/libuilogic/AutoTranslate/GeminiTranslate.cs',
+      '        public List<TranslationPair> GetSupportedSourceLanguages()',
+      r'''        // One audit POST, using the same configured model/key. No automatic retries or rewriting.
+        public async Task<string> RequestCustomGuideReview(string prompt, CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            if (prompt.Length > 250000) throw new System.IO.InvalidDataException("Guide review request is too large.");
+            var payload = System.Text.Json.JsonSerializer.Serialize(new { contents = new[] { new { role = "user", parts = new[] { new { text = prompt } } } }, generationConfig = new { maxOutputTokens = 32768 } });
+            using var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+            using var response = await _httpClient.PostAsync(_baseUrl, content, token);
+            response.EnsureSuccessStatusCode();
+            var body = await response.Content.ReadAsStringAsync(token);
+            using var json = System.Text.Json.JsonDocument.Parse(body);
+            if (!json.RootElement.TryGetProperty("candidates", out var candidates) || candidates.GetArrayLength() == 0)
+                throw new System.IO.InvalidDataException(MakeNoTextMessage(body));
+            var candidate = candidates[0];
+            if (!candidate.TryGetProperty("finishReason", out var finish) || finish.GetString() != "STOP")
+                throw new System.IO.InvalidDataException("Guide review was not completed. The candidate was not approved.");
+            var texts = new List<string>();
+            foreach (var part in candidate.GetProperty("content").GetProperty("parts").EnumerateArray())
+                if (!(part.TryGetProperty("thought", out var thought) && thought.ValueKind == System.Text.Json.JsonValueKind.True) && part.TryGetProperty("text", out var text)) texts.Add(text.GetString() ?? "");
+            token.ThrowIfCancellationRequested();
+            return string.Concat(texts).Trim();
+        }
+
+        public List<TranslationPair> GetSupportedSourceLanguages()''')
+
 patch('src/ui/Features/Translate/AutoTranslateViewModel.cs',
       '    private async Task<bool> StartTranslation(IAutoTranslator translator)\n    {',
       '    private async Task<bool> StartTranslation(IAutoTranslator translator)\n    {\n        if (!await PrepareCustomGuideTranslation(translator)) return false;')
+patch('src/ui/Features/Translate/AutoTranslateViewModel.cs',
+      '    private void Ok()\n    {\n        OkPressed = true;',
+      '    private async Task Ok()\n    {\n        if (!await ApproveCustomGuideResults()) return;\n        OkPressed = true;')
 patch('src/ui/Features/Translate/AutoTranslateWindow.cs',
       '        var engineSettings = BuildEngineSettingsStrip(vm);',
       '        var engineSettings = new StackPanel { Children = { BuildEngineSettingsStrip(vm), vm.MakeCustomGuideStrip() } };')

@@ -1,5 +1,9 @@
 using System;
 using System.Linq;
+using System.IO;
+using System.Threading;
+using System.Net.Http;
+using Nikse.SubtitleEdit.Core.Common;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Avalonia.Controls;
@@ -31,7 +35,7 @@ public partial class AutoTranslateViewModel
     private void RefreshCustomGuideStatus() => CustomGuideStatus = _customGuideProfile == null
         ? "ללא מדריך פרויקט. לשימוש במדריך בחר פרויקט דרך פרויקט ← מילון והנחיות הפרויקט, ואז פתח את התרגום מחדש."
         : CustomGuideEnabled
-            ? "המדריך פעיל: " + _customGuideProfile.Name + ". הוראות, מילון וקטעי רקע רלוונטיים יצורפו לבקשות Gemini במודל שנבחר בחלון. שליחה רק בלחיצה על תרגם."
+            ? "המדריך פעיל: " + _customGuideProfile.Name + ". הוראות, מילון וקטעי רקע רלוונטיים יצורפו לבקשות Gemini במודל שנבחר בחלון. לחיצה על אישור תבצע ביקורת נוספת בתשלום באותו מודל, במקטעים של עד 40 שורות, על הנוסח הסופי שמוצג בחלון. חריגה, אי־ודאות או ביקורת חסרה חוסמות את ההצעה; אין הבטחת דיוק מוחלט. תרגום נשלח בלחיצה על תרגם; ביקורת נשלחת בלחיצה על אישור."
             : "המדריך כבוי: התרגום יישלח בלי מדריך הפרויקט, המילון ופרקי הרקע.";
 
     internal Control MakeCustomGuideStrip()
@@ -60,9 +64,56 @@ public partial class AutoTranslateViewModel
             return false;
         }
         var snapshot = JsonSerializer.Deserialize<ProjectProfile>(JsonSerializer.Serialize(_customGuideProfile))!;
+        try { GuideVerification.Rules(snapshot); }
+        catch (InvalidDataException e) { error = e.Message; return false; }
         selected.CustomGuidePrompt = (nativePrompt, text) => CustomNativeTranslation.BuildPrompt(snapshot, nativePrompt, text);
         return true;
     }
+    private bool _customGuideAuditBusy;
+    internal async Task<bool> ApproveCustomGuideResults()
+    {
+        if (!CustomGuideEnabled || _customGuideProfile == null) return true;
+        if (_customGuideAuditBusy || _translationInProgress || _translationStarting) { StatusText = "המתן לסיום התרגום או הביקורת."; return false; }
+        if (SelectedAutoTranslator is not GeminiTranslate gemini) { StatusText = "ביקורת המדריך דורשת Google Gemini, או כיבוי מפורש של המדריך."; return false; }
+        var snapshot = Rows.Select((row, index) => (Row: row, Source: row.Text ?? "", Translation: row.TranslatedText ?? "", Key: "row" + (index + 1))).ToArray();
+        var candidates = snapshot.Where(x => !string.IsNullOrWhiteSpace(x.Translation)).Select(x => new GuideCandidate(x.Key, x.Source, x.Translation)).ToArray();
+        if (candidates.Length == 0) { StatusText = "אין הצעות לתרגום לבדיקה."; return false; }
+        var profile = _customGuideProfile;
+        var model = Configuration.Settings.Tools.GeminiModel;
+        bool Fresh() => CustomGuideEnabled && ReferenceEquals(_customGuideProfile, profile) && ReferenceEquals(SelectedAutoTranslator, gemini) && model == Configuration.Settings.Tools.GeminiModel &&
+            Rows.Count == snapshot.Length && snapshot.Select((s, i) => ReferenceEquals(Rows[i], s.Row) && Rows[i].Text == s.Source && (Rows[i].TranslatedText ?? "") == s.Translation).All(v => v);
+        _customGuideAuditBusy = true; IsTranslateEnabled = false;
+        if (_cancellationTokenSource.IsCancellationRequested) _cancellationTokenSource = new CancellationTokenSource();
+        var token = _cancellationTokenSource.Token;
+        try
+        {
+            GuideVerification.Rules(profile);
+            for (var offset = 0; offset < candidates.Length; offset += 40)
+            {
+                token.ThrowIfCancellationRequested();
+                if (!Fresh()) throw new InvalidOperationException("התוצאות או המודל השתנו בזמן הביקורת. בדוק ואשר מחדש.");
+                StatusText = $"ביקורת מדריך בתשלום: שורות {offset + 1}–{Math.Min(offset + 40, candidates.Length)} מתוך {candidates.Length}. אפשר לבטל.";
+                var batch = candidates.Skip(offset).Take(40).ToArray();
+                var report = await GuideVerification.ReviewAsync(profile, batch, gemini.RequestCustomGuideReview, token);
+                token.ThrowIfCancellationRequested();
+                if (!Fresh()) throw new InvalidOperationException("התוצאות או המודל השתנו בזמן הביקורת. לא הוחלו כתוביות.");
+                var problems = batch.Select(c => (c.Key, Problem: report.Problem(c.Key))).Where(c => c.Problem != null).ToArray();
+                if (problems.Length > 0)
+                {
+                    CustomGuideStatus = "הביקורת לא אישרה את ההצעות; הן נשארו בחלון לעריכה. אין שכתוב אוטומטי.\n" + string.Join("\n", problems.Select(c => c.Key.Replace("row", "שורה ") + ": " + c.Problem));
+                    StatusText = "נמצאו חריגות או אי־ודאות. לא הוחל תרגום. ערוך ובדוק שוב; כל אישור נוסף יוצר בקשת ביקורת נוספת בתשלום.";
+                    return false;
+                }
+            }
+            CustomGuideStatus = "לא אותרה חריגה בביקורת המודל על הנוסח הסופי. זו אינה הבטחת דיוק; נדרשת בדיקה שלך.";
+            return true;
+        }
+        catch (OperationCanceledException) { StatusText = "ביקורת המדריך בוטלה. לא הוחל תרגום."; return false; }
+        catch (Exception e) when (e is InvalidDataException or HttpRequestException or InvalidOperationException or JsonException or System.Collections.Generic.KeyNotFoundException)
+        { StatusText = "ביקורת המדריך לא הושלמה; לא הוחל תרגום. " + e.Message; return false; }
+        finally { _customGuideAuditBusy = false; IsTranslateEnabled = true; }
+    }
+
     private async Task<bool> PrepareCustomGuideTranslation(IAutoTranslator translator)
     {
         if (TryConfigureCustomGuideEngine(translator, out var error)) return true;

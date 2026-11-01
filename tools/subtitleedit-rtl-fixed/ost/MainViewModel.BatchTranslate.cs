@@ -46,7 +46,7 @@ public partial class MainViewModel
             var choices = new List<(BatchPairing Pairing, CheckBox Confirm, ComboBox Pick)>();
             var info = Label(""); var results = new StackPanel { Spacing = 8 };
             var proposals = new List<(BatchItem Item, BatchProposal Proposal, CheckBox Apply)>();
-            var snapshot = new List<BatchSnapshot>();
+            var snapshot = new List<BatchSnapshot>(); var reviewedChoice = "";
 
             void BuildPairing()
             {
@@ -71,6 +71,7 @@ public partial class MainViewModel
             }
             modeSelected.IsCheckedChanged += (_, _) => { if (!busy) BuildPairing(); };
             modeEmpty.IsCheckedChanged += (_, _) => { if (!busy) BuildPairing(); };
+            p.Children.Add(Label("כל שליחה כוללת תרגום ובקשת ביקורת נוספת בתשלום באותו מודל. תוצאה חסרה, חריגה או אי־ודאות מונעות החלה. ביקורת מודל אינה הבטחת דיוק; אין תיקון או שליחה חוזרת אוטומטיים."));
             p.Children.Add(info);
             ActionButton(p, "סמן אישור לכל ההתאמות החד-משמעיות שמוצגות", () => { foreach (var c in choices.Where(c => c.Pairing.IsUnambiguous)) c.Confirm.IsChecked = true; return Task.CompletedTask; });
             p.Children.Add(pairingPanel);
@@ -88,22 +89,25 @@ public partial class MainViewModel
                 return items;
             }
 
+            string ChoiceFingerprint() => JsonSerializer.Serialize(Items().Select(i => new { i.Key, i.Row.Id, i.English }));
             var consent = Label(""); p.Children.Add(consent);
             ActionButton(p, "הצג מה יישלח והערכת עלות", async () =>
             {
                 var items = Items(); var prompt = await Task.Run(() => CustomTranslateBatch.BuildPrompt(profile, items), cts.Token);
-                RequireEpisodeContext(profile);
+                RequireTranslationGuide(profile);
                 consent.Text = $"יישלחו ל־Google (Gemini API, מודל {model}): {items.Count} משפטי מקור באנגלית שאישרת, העברית הקיימת של השורות האלה והשורות הסמוכות להן, ההנחיות, המדריך, המילון המאושר, צמדי זיכרון מאושרים תואמים וקטעים מפרקי הרקע שסימנת בפרויקט. לא יישלחו קובץ הווידאו, הערות פנימיות ושאלות לבמאי.\n" +
-                               CustomTranslateBatch.Estimate(model, prompt, CustomProject.GeminiMaxOutputTokens, DateTime.UtcNow) + "\nכל לחיצה היא בקשה אחת בתשלום; אין שליחה חוזרת אוטומטית.";
+                               CustomTranslateBatch.Estimate(model, prompt, CustomProject.GeminiMaxOutputTokens, DateTime.UtcNow) + "\nלתרגום מצטרפת בקשת ביקורת אחת נוספת בתשלום, עם המקור וההצעות, הוראות ומדריך מלאים, מילון וקטעי רקע. ההערכה לעיל היא לתרגום בלבד; עלות הביקורת נוספת ותלויה באורך התוצאה. אין שליחה חוזרת אוטומטית.";
             });
             ActionButton(p, "שלח אצווה אחת ל־Gemini (API בתשלום)", async () =>
             {
                 if (busy) return;
                 var items = Items(); var prompt = await Task.Run(() => CustomTranslateBatch.BuildPrompt(profile, items), cts.Token);
-                RequireEpisodeContext(profile);
+                RequireTranslationGuide(profile);
                 var key = CustomWindowsIntegration.ReadKey(); if (key.Length == 0) throw new InvalidOperationException("הגדר מפתח Gemini בתפריט הפרויקט.");
                 if (consent.Text is not { Length: > 0 }) throw new InvalidOperationException("לחץ תחילה על \"הצג מה יישלח והערכת עלות\".");
                 if (items.Any(i => !Subtitles.Any(r => r.Id == i.Row.Id && (r.Text ?? "") == i.Row.Text))) throw new InvalidOperationException("הכתוביות השתנו; בנה שוב את ההתאמות.");
+                GuideVerification.Rules(profile);
+                var sentChoice = ChoiceFingerprint();
                 busy = true; var seq = ++requestSeq; results.Children.Clear(); proposals.Clear();
                 snapshot = Subtitles.Where(r => items.Any(i => i.Row.Id == r.Id)).Select(r => new BatchSnapshot(r.Id, r.Text ?? "")).ToList();
                 results.Children.Add(Label("ממתין לתשובת Gemini… אפשר לבטל."));
@@ -111,10 +115,19 @@ public partial class MainViewModel
                 {
                     using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(15) };
                     var json = await CustomProject.AskAsync(http, key, prompt, cts.Token, model);
-                    RequireEpisodeContext(profile);
+                    RequireTranslationGuide(profile);
                     if (seq != requestSeq) return; // a newer selection replaced this request: its answer is discarded
                     var parsed = CustomTranslateBatch.Parse(json, items);
+                    var reviewItems = parsed.Where(prop => prop.Problem == null).Select(prop => new GuideCandidate(prop.Key, items.First(i => i.Key == prop.Key).English, prop.Text)).ToArray();
+                    GuideReport? report = null;
+                    if (reviewItems.Length > 0)
+                        report = await GuideVerification.ReviewAsync(profile, reviewItems, (audit, token) => CustomProject.AskAsync(http, key, audit, token, model), cts.Token);
+                    RequireTranslationGuide(profile); if (seq != requestSeq) return;
+                    if (sentChoice != ChoiceFingerprint()) throw new InvalidOperationException("בחירת המקור השתנתה בזמן הביקורת; שלח מחדש.");
+                    reviewedChoice = sentChoice;
+                    parsed = parsed.Select(prop => prop with { Problem = prop.Problem ?? report?.Problem(prop.Key) }).ToList();
                     results.Children.Clear();
+                    if (report != null) results.Children.Add(Label(report.Summary));
                     results.Children.Add(Label("סמן רק הצעות שבדקת. ההחלה היא פעולה אחת שניתן לבטל ב־Undo. מונחים וזיכרון תרגום אינם נשמרים מעצמם."));
                     foreach (var prop in parsed)
                     {
@@ -138,7 +151,8 @@ public partial class MainViewModel
             {
                 var approved = proposals.Where(x => x.Apply.IsChecked == true && x.Proposal.Problem == null).ToList();
                 if (approved.Count == 0) throw new InvalidOperationException("לא סומנו הצעות להחלה.");
-                RequireEpisodeContext(profile);
+                RequireTranslationGuide(profile);
+                if (reviewedChoice != ChoiceFingerprint()) throw new InvalidOperationException("בחירת המקור השתנתה; שלח מחדש לביקורת.");
                 ApplyBatchTranslations(document, snapshot, approved.Select(x => (x.Item.Row.Id, x.Proposal.Text)).ToList());
                 ShowStatus($"הוחלו {approved.Count} הצעות שאישרת. ניתן לבטל ב־Undo.", 8000);
                 w.Close();

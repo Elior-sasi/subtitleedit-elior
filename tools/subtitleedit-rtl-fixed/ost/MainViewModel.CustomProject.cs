@@ -349,6 +349,7 @@ public partial class MainViewModel
             var checks = new List<(CheckBox Check, SourceCue Cue)>();
             foreach (var c in candidates) { var check = new CheckBox { Content = Label(TimeSpan.FromMilliseconds(c.Start).ToString(@"hh\:mm\:ss") + " · " + c.Text) }; checks.Add((check, c)); p.Children.Add(check); }
             p.Children.Add(Label("העברית הנוכחית: " + expectedText));
+            p.Children.Add(Label("כל שליחה כוללת בקשת תרגום ובקשת ביקורת נוספת בתשלום באותו מודל. ביקורת חסרה, חריגה או אי־ודאות חוסמות החלה; אין תיקונים או ניסיונות חוזרים אוטומטיים. ביקורת מודל אינה הבטחת דיוק."));
             p.Children.Add(Label($"פרקי רקע מסומנים: {profile.PreviousEpisodes?.Count(e => e.IncludeInAi) ?? 0}. קטעים רלוונטיים יצורפו בשליחה ל־Gemini."));
             ActionButton(p, "השמע את הכתובית בלולאה", () => { SubtitleGrid.SelectedItems?.Clear(); SubtitleGrid.SelectedItem = row; PlaySelectedLinesWithLoopCommand.Execute(null); return Task.CompletedTask; });
             ActionButton(p, "הפסק השמעה", () => { PauseCommand.Execute(null); return Task.CompletedTask; });
@@ -364,12 +365,19 @@ public partial class MainViewModel
                 var key = CustomWindowsIntegration.ReadKey(); if (key.Length == 0) throw new InvalidOperationException("הגדר מפתח Gemini בתפריט הפרויקט.");
                 var context = Subtitles.Skip(Math.Max(0, Subtitles.IndexOf(row) - 2)).Take(5).Select(r => r.Text).ToArray();
                 var prompt = await Task.Run(() => CustomProject.BuildPrompt(profile, "Offer up to 3 Hebrew translation alternatives and Hebrew explanations. Preserve ALL original markup bytes. Return {\"suggestions\":[{\"text\":\"...\",\"reason\":\"...\"}]}.", JsonSerializer.Serialize(new { english, currentHebrew = expectedText, context })), cancel.Token);
-                RequireEpisodeContext(profile);
-                using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(15) }; var json = await CustomProject.AskAsync(http, key, prompt, cancel.Token, GeminiModel()); RequireEpisodeContext(profile); var offers = CustomProject.Offers(json); suggestions.Children.Clear();
-                foreach (var offer in offers)
+                RequireTranslationGuide(profile);
+                GuideVerification.Rules(profile);
+                var model = GeminiModel(); suggestions.Children.Clear();
+                using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(15) }; var json = await CustomProject.AskAsync(http, key, prompt, cancel.Token, model); RequireTranslationGuide(profile); var offers = CustomProject.Offers(json);
+                if (offers.Count == 0) throw new InvalidDataException("לא התקבלה הצעה לתרגום.");
+                var reviewItems = offers.Select((offer, index) => new GuideCandidate("offer" + index, english, offer.Text)).ToArray();
+                var report = await GuideVerification.ReviewAsync(profile, reviewItems, (audit, token) => CustomProject.AskAsync(http, key, audit, token, model), cancel.Token);
+                RequireTranslationGuide(profile); suggestions.Children.Add(Label(report.Summary));
+                for (var index = 0; index < offers.Count; index++)
                 {
-                    suggestions.Children.Add(Label("הצעה: " + offer.Text + "\nהסבר: " + offer.Reason));
-                    ActionButton(suggestions, "החל הצעה על השורה הנבחרת בלבד", () => { RequireEpisodeContext(profile); ApplyCustomOffer(row.Id, expectedText, document, offer.Text); w.Close(); return Task.CompletedTask; });
+                    var offer = offers[index]; var problem = report.Problem("offer" + index);
+                    suggestions.Children.Add(Label("הצעה: " + offer.Text + "\nהסבר: " + offer.Reason + (problem == null ? "\nלא אותרה חריגה בביקורת המודל; נדרשת בדיקה שלך." : "\nלא ניתן להחיל: " + problem)));
+                    if (problem == null) ActionButton(suggestions, "החל הצעה על השורה הנבחרת בלבד", () => { RequireTranslationGuide(profile); if (english != string.Join("\n", checks.Where(c => c.Check.IsChecked == true).Select(c => c.Cue.Text))) throw new InvalidOperationException("בחירת המקור השתנתה; שלח מחדש לבדיקה."); ApplyCustomOffer(row.Id, expectedText, document, offer.Text); w.Close(); return Task.CompletedTask; });
                 }
             });
         });
