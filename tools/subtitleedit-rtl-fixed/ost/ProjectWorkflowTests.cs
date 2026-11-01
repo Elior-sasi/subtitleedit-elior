@@ -133,7 +133,7 @@ public partial class OstTableTests
                     // Test an actual selection transition. AlwaysSelected otherwise
                     // preselects row 0 as rows are inserted, before the test waveform exists.
                     vm.SubtitleGrid.SelectionMode = SelectionMode.Multiple;
-                    vm.SubtitleGrid.SelectedItem = null;
+                    vm.SubtitleGrid.SelectedItem = null; vm.SubtitleGrid.Selection.Clear();
                     vm.Subtitles.Clear();
                     var first = new SubtitleLineViewModel { Number = 1, Text = "כתובית ראשונה", StartTime = TimeSpan.FromSeconds(1), EndTime = TimeSpan.FromSeconds(3) };
                     var second = new SubtitleLineViewModel { Number = 2, Text = "כתובית שנייה", StartTime = TimeSpan.FromSeconds(4), EndTime = TimeSpan.FromSeconds(5) };
@@ -422,7 +422,7 @@ public partial class OstTableTests
             {
                 FeedbackItem(vm, caption).RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent)); await FeedbackDrain();
                 var notice = Assert.Single(owner.OwnedWindows, w => w.Name == "CustomActionNotice");
-                var text = notice.FindControl<TextBlock>("CustomActionNoticeText")!;
+                var text = Assert.Single(notice.GetVisualDescendants().OfType<TextBlock>(), t => t.Name == "CustomActionNoticeText");
                 Assert.Contains("שמור תחילה", text.Text); Assert.Equal(text.Text, Avalonia.Automation.AutomationProperties.GetName(text));
                 notice.Close(); await FeedbackDrain(); Assert.Equal(hash, vm.GetFastHash());
             }
@@ -434,7 +434,7 @@ public partial class OstTableTests
             {
                 FeedbackItem(vm, caption).RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent)); await FeedbackDrain();
                 var notice = Assert.Single(owner.OwnedWindows, w => w.Name == "CustomActionNotice");
-                Assert.Contains("לא נבחר פרויקט", notice.FindControl<TextBlock>("CustomActionNoticeText")!.Text);
+                Assert.Contains("לא נבחר פרויקט", Assert.Single(notice.GetVisualDescendants().OfType<TextBlock>(), t => t.Name == "CustomActionNoticeText").Text);
                 var configure = Assert.Single(notice.GetVisualDescendants().OfType<Button>(), b => b.Content as string == "פתח מילון והנחיות הפרויקט…");
                 configure.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent)); await FeedbackDrain();
                 var profileDialog = Assert.Single(owner.OwnedWindows, w => w.Title == "מילון והנחיות הפרויקט");
@@ -458,12 +458,13 @@ public partial class OstTableTests
             var profile = new ProjectProfile { Name = "פרויקט בדיקה", Guide = "מדריך בדיקה" }; Field<System.Collections.Generic.List<ProjectProfile>>(vm, "_customProfiles").Add(profile);
             var work = Field<ProjectWork>(vm, "_customWork"); work.ProfileId = profile.Id; work.ReferenceText = "1\n00:00:01,000 --> 00:00:03,000\nHello there\n"; work.AlignmentConfirmed = true;
             var row = new SubtitleLineViewModel { Number = 1, Text = "שלום", StartTime = TimeSpan.FromSeconds(1), EndTime = TimeSpan.FromSeconds(3) };
-            vm.Subtitles.Clear(); vm.Subtitles.Add(row); vm.SubtitleGrid.SelectedItems?.Clear(); vm.SubtitleGrid.SelectedItem = null;
+            vm.Subtitles.Clear(); vm.Subtitles.Add(row); vm.SubtitleGrid.SelectedItems?.Clear(); vm.SubtitleGrid.SelectedItem = null; vm.SubtitleGrid.Selection.Clear();
             var hash = vm.GetFastHash(); var before = System.Text.Json.JsonSerializer.Serialize(profile);
             foreach (var caption in new[] { "בדוק מול המקור / תרגם עם המדריך…", "משפט חוזר / זיכרון תרגום…", "הערה ומצב בדיקה לשורה…", "שאלה לבמאי על השורה הנבחרת…" })
             {
+                vm.SubtitleGrid.SelectedItems?.Clear(); vm.SubtitleGrid.Selection.Clear(); vm.SubtitleGrid.SelectedItem = null;
                 FeedbackItem(vm, caption).RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent)); await FeedbackDrain();
-                var notice = Assert.Single(owner.OwnedWindows, w => w.Name == "CustomActionNotice"); Assert.Contains("בחר כתובית עבודה", notice.FindControl<TextBlock>("CustomActionNoticeText")!.Text); notice.Close(); await FeedbackDrain();
+                var notice = Assert.Single(owner.OwnedWindows, w => w.Name == "CustomActionNotice"); Assert.Contains("בחר כתובית עבודה", Assert.Single(notice.GetVisualDescendants().OfType<TextBlock>(), t => t.Name == "CustomActionNoticeText").Text); notice.Close(); await FeedbackDrain();
             }
             row.IsReferenceOnly = true; vm.SubtitleGrid.SelectedItem = row; await FeedbackDrain();
             FeedbackItem(vm, "בדוק מול המקור / תרגם עם המדריך…").RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent)); await FeedbackDrain();
@@ -509,7 +510,7 @@ public partial class OstTableTests
                 vm.LockTimeCodes = locked;
                 var split = Assert.Single(FeedbackMenuItems(vm.Menu.Items), m => m.Name == "ProSplitAtCaretAndVideo");
                 split.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent)); await FeedbackDrain();
-                var notice = Assert.Single(owner.OwnedWindows, w => w.Name == "CustomActionNotice"); Assert.Contains(locked ? "נעולים" : "וידאו", notice.FindControl<TextBlock>("CustomActionNoticeText")!.Text); notice.Close(); await FeedbackDrain(); Assert.Equal(hash, vm.GetFastHash());
+                var notice = Assert.Single(owner.OwnedWindows, w => w.Name == "CustomActionNotice"); Assert.Contains(locked ? "נעולים" : "וידאו", Assert.Single(notice.GetVisualDescendants().OfType<TextBlock>(), t => t.Name == "CustomActionNoticeText").Text); notice.Close(); await FeedbackDrain(); Assert.Equal(hash, vm.GetFastHash());
             }
             vm.LockTimeCodes = false;
         }

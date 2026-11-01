@@ -119,7 +119,7 @@ public partial class MainViewModel
             if (selection)
             {
                 Nikse.SubtitleEdit.Logic.TableViewExtras.SyncSelectedItemsWithSelection(SubtitleGrid);
-                var rows = SubtitleGridSelectedItems.ToList();
+                var rows = SubtitleGridSelectedItemsWithReference;
                 if (rows.Count == 0 || rows.Any(r => r.IsReferenceOnly || r.IsDefault || r.IsComment))
                 {
                     await ShowCustomActionNotice(title, "בחר כתובית עבודה ברשימה הראשית. שורות מקור, ברירת מחדל והערות אינן יעד לעריכה. לאחר הבחירה הפעל שוב את הפעולה.");
