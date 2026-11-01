@@ -473,7 +473,10 @@ public partial class OstTableTests
             vm.SubtitleGrid.SelectedItems!.Clear(); vm.SubtitleGrid.SelectedItems.Add(reference);
             Assert.True(reference.IsReferenceOnly); Assert.Same(reference, Assert.Single(vm.SubtitleGridSelectedItemsWithReference));
             FeedbackItem(vm, "בדוק מול המקור / תרגם עם המדריך…").RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(MenuItem.ClickEvent)); await FeedbackDrain();
-            var rejected = Assert.Single(owner.OwnedWindows, w => w.Name == "CustomActionNotice"); rejected.Close();
+            var rejected = owner.OwnedWindows.SingleOrDefault(w => w.Name == "CustomActionNotice");
+            Assert.True(rejected != null, "Expected reference-selection warning. Actual dialogs: " + string.Join(" | ", owner.OwnedWindows.Select(w => w.Name + ":" + w.Title)));
+            Assert.Contains("שורות מקור", Assert.Single(rejected!.GetVisualDescendants().OfType<TextBlock>(), t => t.Name == "CustomActionNoticeText").Text);
+            rejected.Close();
             vm.Subtitles.Remove(reference); hash = vm.GetFastHash();
             foreach (var pair in new[] {
                 ("בדוק מול המקור / תרגם עם המדריך…", "בדיקה מול המקור — פרויקט בדיקה"),

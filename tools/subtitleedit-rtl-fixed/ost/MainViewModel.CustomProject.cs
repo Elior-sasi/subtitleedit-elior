@@ -36,7 +36,23 @@ public partial class MainViewModel
     {
         CustomWindowsIntegration.Initialize();
         var menu = new MenuFlyout();
-        void Item(string title, Func<Task> action, bool saved = false, bool project = false, bool selection = false) { var item = new MenuItem { Header = MenuCaption(title), FlowDirection = FlowDirection.LeftToRight }; AutomationProperties.SetName(item, title); item.Click += async (_, _) => { await Task.Yield(); await RunCustomMenuAction(title, action, saved || project || selection, project, selection); }; menu.Items.Add(item); }
+        void Item(string title, Func<Task> action, bool saved = false, bool project = false, bool selection = false)
+        {
+            var item = new MenuItem { Header = MenuCaption(title), FlowDirection = FlowDirection.LeftToRight };
+            AutomationProperties.SetName(item, title);
+            item.Click += async (_, _) =>
+            {
+                // Menu dismissal can change grid focus/selection. Never turn a click on
+                // reference rows into an edit of a subsequently focused working row.
+                if (selection) Nikse.SubtitleEdit.Logic.TableViewExtras.SyncSelectedItemsWithSelection(SubtitleGrid);
+                var clicked = selection ? SubtitleGridSelectedItemsWithReference : new List<SubtitleLineViewModel>();
+                var invalid = selection && (clicked.Count == 0 || clicked.Any(r => r.IsReferenceOnly || r.IsDefault || r.IsComment));
+                var ids = clicked.Select(r => r.Id).ToArray();
+                await Task.Yield();
+                await RunCustomMenuAction(title, action, saved || project || selection, project, selection, ids, invalid);
+            };
+            menu.Items.Add(item);
+        }
         Item("תסריט לכתוביות…", OpenScriptToSubtitles);
         Item("תסריט שונה מהדיבור — השוואה ואישור…", () => OpenScriptTranscriptReview());
         Item("השוואת גרסאות — טקסט או זמנים…", ShowCompare);
@@ -101,7 +117,7 @@ public partial class MainViewModel
 
     // User actions must explain unmet prerequisites in a visible, accessible dialog.
     // Monitoring keeps its non-modal EnsureCustomProject path; no automatic save/AI call.
-    private async Task RunCustomMenuAction(string title, Func<Task> action, bool saved, bool project, bool selection)
+    private async Task RunCustomMenuAction(string title, Func<Task> action, bool saved, bool project, bool selection, Guid[] clickedIds, bool invalidAtClick)
     {
         try
         {
@@ -120,9 +136,14 @@ public partial class MainViewModel
             {
                 Nikse.SubtitleEdit.Logic.TableViewExtras.SyncSelectedItemsWithSelection(SubtitleGrid);
                 var rows = SubtitleGridSelectedItemsWithReference;
-                if (rows.Count == 0 || rows.Any(r => r.IsReferenceOnly || r.IsDefault || r.IsComment))
+                if (invalidAtClick || rows.Count == 0 || rows.Any(r => r.IsReferenceOnly || r.IsDefault || r.IsComment))
                 {
                     await ShowCustomActionNotice(title, "בחר כתובית עבודה ברשימה הראשית. שורות מקור, ברירת מחדל והערות אינן יעד לעריכה. לאחר הבחירה הפעל שוב את הפעולה.");
+                    return;
+                }
+                if (!clickedIds.SequenceEqual(rows.Select(r => r.Id)))
+                {
+                    await ShowCustomActionNotice(title, "הבחירה השתנתה מאז הלחיצה. בחר את כתוביות העבודה הרצויות והפעל שוב את הפעולה.");
                     return;
                 }
             }
