@@ -26,6 +26,8 @@ public partial class OstTableTests
         Assert.Equal(new EpisodeIdentity("show name", 2, 7), EpisodeContextDiscovery.Identify("[Group] Show.Name.S02E07.he.srt"));
         Assert.Equal(new EpisodeIdentity("show name", 2, 7), EpisodeContextDiscovery.Identify("Show Name - 2x07.en.SRT"));
         Assert.Equal(new EpisodeIdentity("סדרה", 1, 3), EpisodeContextDiscovery.Identify("סדרה.S01E03.srt"));
+        Assert.Null(EpisodeContextDiscovery.Identify("Show.720x480.srt"));
+        Assert.Equal(new EpisodeIdentity("show", 1, 2), EpisodeContextDiscovery.Identify("Show.S01E02.720x480.srt"));
         Assert.NotEqual(EpisodeContextDiscovery.Identify("Show (2020).S01E03.srt")!.Series, EpisodeContextDiscovery.Identify("Show (2023).S01E03.srt")!.Series);
         foreach (var name in new[] { "Show.07.srt", "S01E07.srt", "Show.S01E01E02.srt", "Show.S01E01-E02.srt", "Show.S01E01-02.srt", "Show.S01E01.S02E02.srt", "Show.S00E01.srt", "Show.S01E00.srt" }) Assert.Null(EpisodeContextDiscovery.Identify(name));
     }

@@ -15,7 +15,7 @@ internal sealed record EpisodeDiscoveryResult(EpisodeIdentity Current, IReadOnly
 internal static class EpisodeContextDiscovery
 {
     internal const int MaxEntries = 5000, MaxDirectories = 256, MaxDepth = 3, MaxCandidates = 256;
-    private static readonly Regex EpisodeToken = new(@"(?<![\p{L}\p{N}])(?:S(?<s>\d{1,3})E(?<e>\d{1,4})|(?<s>\d{1,3})x(?<e>\d{1,4}))(?!\d)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+    private static readonly Regex EpisodeToken = new(@"(?<![\p{L}\p{N}])(?:S(?<s>\d{1,3})E(?<e>\d{1,4})|(?<s>\d{1,2})x(?<e>\d{1,4}))(?!\d)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
     internal static EpisodeIdentity? Identify(string path)
     {
         var name = Path.GetFileNameWithoutExtension(path);
