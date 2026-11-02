@@ -61,6 +61,8 @@ public partial class MainViewModel
         Item("הצמדה לחילופי שוטים — הצעות לאישור…", OpenProShotPreview);
         Item("רוחב טקסט ואזור בטוח — בדיקה…", OpenProWidthReview);
         Item("מילון והנחיות הפרויקט…", OpenProjectProfile, saved: true);
+        Item("צור מדריך לפי שם סדרה או סרט…", OpenGuideDraft, project: true);
+        Item("זיהוי והסרת ניקוד — ללא AI…", OpenNiqqudRemoval);
         Item("פרקים קודמים — חומר רקע…", OpenEpisodeContext, project: true);
         Item("טען וסנכרן מקור באנגלית…", OpenEnglishReference, saved: true);
         Item("בדוק מול המקור / תרגם עם המדריך…", ReviewEnglish, project: true, selection: true);
@@ -101,7 +103,7 @@ public partial class MainViewModel
         var project = Menu.Items.OfType<MenuItem>().Single(m => m.Name == "CustomProjectMainMenu");
         var syncLabels = new[] { "תסריט לכתוביות…", "תסריט שונה מהדיבור — השוואה ואישור…", "הצמדה לחילופי שוטים — הצעות לאישור…", "טען וסנכרן מקור באנגלית…", "התאם כתוביות לגרסת וידאו אחרת…", "תיקון תזמוני CC לפי הדיבור…" };
         var translateLabels = new[] { "בדוק מול המקור / תרגם עם המדריך…", "אתר שמות ומונחים בקובץ…", "משפט חוזר / זיכרון תרגום…" };
-        var toolsLabels = new[] { "השוואת גרסאות — טקסט או זמנים…", "סקירה ממוקדת — ניגון שורות לבדיקה…", "קבע נקודת בדיקה לשינויים הבאים", "רוחב טקסט ואזור בטוח — בדיקה…", "הקודמת לבדיקה", "הבאה לבדיקה", "בדוק עקביות שמות ומונחים…", "דוח מסירה קצר…", "חיפוש בשורות OST…" };
+        var toolsLabels = new[] { "זיהוי והסרת ניקוד — ללא AI…", "השוואת גרסאות — טקסט או זמנים…", "סקירה ממוקדת — ניגון שורות לבדיקה…", "קבע נקודת בדיקה לשינויים הבאים", "רוחב טקסט ואזור בטוח — בדיקה…", "הקודמת לבדיקה", "הבאה לבדיקה", "בדוק עקביות שמות ומונחים…", "דוח מסירה קצר…", "חיפוש בשורות OST…" };
         var optionsLabels = new[] { "גיבוי ושחזור הגדרות…", "Gemini - מפתח ובחירת מודל…" };
         foreach (var (target, labels) in new[] { (sync, syncLabels), (translate, translateLabels), (tools, toolsLabels), (options, optionsLabels) })
         {

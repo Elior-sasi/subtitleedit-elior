@@ -202,6 +202,11 @@ Set-Content $path $text -Encoding utf8
 Copy-Item "$source/LocalNameSuggestions.cs" 'src/ui/Features/Main/MainHelpers/LocalNameSuggestions.cs' -Force
 Copy-Item "$source/MainViewModel.LocalNames.cs" 'src/ui/Features/Main/MainViewModel.LocalNames.cs' -Force
 Copy-Item "$source/LocalNameTests.cs" 'tests/UI/Features/Main/LocalNameTests.cs' -Force
+Copy-Item "$source/GuideDraft.cs" 'src/ui/Features/Main/MainHelpers/GuideDraft.cs' -Force
+Copy-Item "$source/HebrewNiqqud.cs" 'src/ui/Features/Main/MainHelpers/HebrewNiqqud.cs' -Force
+Copy-Item "$source/MainViewModel.GuideDraft.cs" 'src/ui/Features/Main/MainViewModel.GuideDraft.cs' -Force
+Copy-Item "$source/MainViewModel.Niqqud.cs" 'src/ui/Features/Main/MainViewModel.Niqqud.cs' -Force
+Copy-Item "$source/GuideDraftNiqqudTests.cs" 'tests/UI/Features/Main/GuideDraftNiqqudTests.cs' -Force
 Copy-Item "$source/CustomQc.cs" 'src/ui/Features/Main/MainHelpers/CustomQc.cs' -Force
 Copy-Item "$source/MainViewModel.CustomQc.cs" 'src/ui/Features/Main/MainViewModel.CustomQc.cs' -Force
 Copy-Item "$source/SeCustomQc.cs" 'src/ui/Logic/Config/SeCustomQc.cs' -Force
