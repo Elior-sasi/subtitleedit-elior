@@ -181,7 +181,7 @@ public partial class OstTableTests
             var search = (TextBox)typeof(SettingsPage).GetField("_searchBox", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(page)!;
             search.Text = "מיקום תגית"; Dispatcher.UIThread.RunJobs(); settingsWindow.UpdateLayout();
             Assert.Single(settingsWindow.GetVisualDescendants().OfType<ComboBox>(), c => c.Name == "CustomWaveformRtlMarkerPosition");
-            Assert.Contains(settingsWindow.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == "מיקום תגית RTL");
+            Assert.Equal(FlowDirection.RightToLeft, Assert.Single(settingsWindow.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == "מיקום תגית RTL").FlowDirection);
             SaveWaveformFixture(settingsWindow, "Waveform-RTL-Settings");
         }
         finally { Se.Settings.Waveform.CustomRtlMarkerAtBottom = old; settingsWindow?.Close(); owner.Close(); }
@@ -191,14 +191,15 @@ public partial class OstTableTests
     {
         if (Environment.GetEnvironmentVariable("GITHUB_WORKSPACE") is not { Length: > 0 } workspace) return;
         var dir = Path.Combine(workspace, "waveform-rtl-smoke"); Directory.CreateDirectory(dir);
-        AvaloniaHeadlessPlatform.ForceRenderTimerTick(); using var frame = window.CaptureRenderedFrame(); Assert.NotNull(frame);
+        if (window.Content is AudioVisualizer waveform) waveform.InvalidateVisual();
+        Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); using var frame = window.CaptureRenderedFrame(); Assert.NotNull(frame);
         using var file = File.Create(Path.Combine(dir, name + ".png")); frame!.Save(file, PngBitmapEncoderOptions.Default);
     }
 
     [AvaloniaFact]
     public void HebrewWaveformCaptionsAndMixedLatinNumbersStayRightAlignedInBothPositionsAndRenderers()
     {
-        var (owner, vm) = ProEditor(); var originalWaveform = vm.AudioVisualizer;
+        var (owner, vm) = ProEditor(); vm.StopBackgroundWork(); var originalWaveform = vm.AudioVisualizer;
         var settings = JsonSerializer.Serialize(Se.Settings.Waveform);
         try
         {

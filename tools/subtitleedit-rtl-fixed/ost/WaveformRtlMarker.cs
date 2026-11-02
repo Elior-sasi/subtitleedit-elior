@@ -65,6 +65,12 @@ internal static class WaveformRtlMarker
             }
             AutomationProperties.SetName(status, status.Text);
         };
+        panel.AttachedToVisualTree += (_, _) =>
+        {
+            // Only this label gets RTL text; native settings geometry stays LTR.
+            var row = panel.GetVisualAncestors().OfType<Grid>().FirstOrDefault(g => g.Children.OfType<TextBlock>().Any(t => t.Text == "מיקום תגית RTL"));
+            if (row != null) foreach (var label in row.Children.OfType<TextBlock>().Where(t => t.Text == "מיקום תגית RTL")) label.FlowDirection = FlowDirection.RightToLeft;
+        };
         panel.Children.Add(combo); panel.Children.Add(status); return panel;
     }
 }
