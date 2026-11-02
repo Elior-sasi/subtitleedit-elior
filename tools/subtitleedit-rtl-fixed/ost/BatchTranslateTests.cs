@@ -161,9 +161,9 @@ public partial class OstTableTests
             // its lines with current settings after approval.
             var exactReviewed = "<i>זאת שורה ארוכה שמוצגת בדיוק כך\nוזאת השורה השנייה שאושרה</i>";
             vm.ApplyBatchTranslations("test.srt", sent, new[] { (b.Id, exactReviewed) }, preserveReviewedText: true);
-            Assert.Equal(exactReviewed, b.Text);
+            Assert.Equal(exactReviewed, vm.Subtitles.Single(r => r.Id == b.Id).Text);
             vm.UndoCommand.Execute(null);
-            Assert.Equal("<i>טיוטה</i>", b.Text);
+            Assert.Equal("<i>טיוטה</i>", vm.Subtitles.Single(r => r.Id == b.Id).Text);
         }
         finally { window.Close(); }
     }
