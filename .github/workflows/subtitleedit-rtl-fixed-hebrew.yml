@@ -368,3 +368,13 @@ jobs:
 
 
 
+
+      - name: Upload synthetic dialog layout screenshots
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v5
+        with:
+          name: Custom-Dialog-Layout-Smoke
+          path: dialog-layout-smoke/*
+          if-no-files-found: error
+          retention-days: 7

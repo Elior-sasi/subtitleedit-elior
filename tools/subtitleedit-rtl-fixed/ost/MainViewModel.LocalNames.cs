@@ -48,11 +48,12 @@ public partial class MainViewModel
             {
                 var sequence = 0;
                 window.Name = "LocalNameSuggestionsDialog"; window.Closed += (_, _) => cancel.Cancel();
-                panel.Children.Add(Label("ללא Gemini, רשת או תשלום. נבדק דמיון של אות אחת (כולל החלפת סדר שתי אותיות) לשמות/מונחים בעברית במילון ולשדות שמות מפורשים במדריך, כגון שם: נארוטו או Naruto = נארוטו. לא מחלצים שמות מטקסט חופשי ולא קובעים שזה אותו אדם. בדיקת הדמיון מסננת שמות קצרים ומילים נפוצות; בדיקות המילון המדויקות נשמרות. ייתכנו החמצות והתראות שווא."));
-                panel.Children.Add(Label("כל תוצאה מסומנת כתיב שונה — ההבדל הוא עובדתי, אך אין קביעה שזו אותה דמות או שזו טעות. הסריקה יזומה בלבד. עריכת כתוביות, החלפת מסמך או שינוי מדריך/מילון מבטלים סימונים ישנים. אין תיקון כתוביות או אישור מילון אוטומטי."));
+                var actions = PinProjectActions(window);
+                panel.Children.Add(Label("בדיקה מקומית של כתיב שונה מול שמות ידועים. ללא AI וללא שינוי בכתוביות."));
+                DialogDetails(panel, "איך הבדיקה עובדת?", Label("נבדק הבדל של אות אחת או חילוף אותיות מול מילון ושדות שם מפורשים במדריך, כגון Naruto = נארוטו. לא מחלצים שמות מטקסט חופשי ולא קובעים שזו אותה דמות או טעות. שמות קצרים ומילים נפוצות מסוננים בבדיקת הדמיון. ייתכנו החמצות והתראות שווא; עריכת המסמך או שינוי מדריך/מילון מבטלים תוצאות ישנות."));
                 var status = Label("לחץ על סרוק מקומית כדי להתחיל."); status.Name = "LocalNameSuggestionsStatus"; panel.Children.Add(status);
                 var results = new StackPanel { Spacing = 8 }; panel.Children.Add(results);
-                ActionButton(panel, "בדוק את כל השמות והצג כתיב שונה", async () =>
+                var scanButton = ActionButton(actions, "בדוק את כל השמות והצג כתיב שונה", async () =>
                 {
                     var request = ++sequence;
                     var document = _subtitleFileName ?? ""; var hash = GetFastHash(); var generation = _ostDocumentGeneration; var fingerprint = LocalNamesFingerprint();
@@ -78,8 +79,9 @@ public partial class MainViewModel
                             SubtitleGrid.SelectedItem = row; SubtitleGrid.ScrollIntoView(row); ShowStatus(hit.Message, 10000); window.Close(); return Task.CompletedTask;
                         });
                 });
-                ActionButton(panel, "נקה סימוני כתיב שונה מקומיים", () => { sequence++; _customLocalNames = Array.Empty<LocalNameHit>(); _customQcDirty = true; ScanCustomQc(); results.Children.Clear(); status.Text = "סימוני החשד המקומיים נוקו. הכתוביות והמילון לא שונו."; return Task.CompletedTask; });
-                ActionButton(panel, "בטל סריקה וסגור", () => { cancel.Cancel(); window.Close(); return Task.CompletedTask; });
+                scanButton.Name = "LocalNamesScan";
+                ActionButton(actions, "נקה סימוני כתיב שונה מקומיים", () => { sequence++; _customLocalNames = Array.Empty<LocalNameHit>(); _customQcDirty = true; ScanCustomQc(); results.Children.Clear(); status.Text = "סימוני החשד המקומיים נוקו. הכתוביות והמילון לא שונו."; return Task.CompletedTask; });
+
             });
         }
         finally { if (ReferenceEquals(_customLocalNamesCancel, cancel)) _customLocalNamesCancel = null; }

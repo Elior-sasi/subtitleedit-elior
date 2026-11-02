@@ -31,25 +31,28 @@ public partial class MainViewModel
         await ProjectDialog("זיהוי והסרת ניקוד — ללא AI", (panel, window) =>
         {
             window.Name = "NiqqudRemovalDialog";
-            panel.Children.Add(Label("מסיר נקודות ניקוד עבריות בלבד: תנועות, דגש/מפיק, מתג, רפה ונקודות שין/שׂין. טעמי מקרא, מקף עברי, סוף פסוק, אותיות, פיסוק, רווחים, סימני כיוון ותגיות עיצוב נשמרים. אין שינוי עד ללחיצה על הסר; אפשר לשחזר ב־Undo."));
+            var actions = PinProjectActions(window);
+            panel.Children.Add(Label("בדוק את התצוגה ואז הסר ניקוד. אפשר לשחזר ב־Undo."));
+            DialogDetails(panel, "מה יוסר ומה נשמר?", Label("מוסרים תנועות, דגש/מפיק, מתג, רפה ונקודות שין/שׂין. אותיות, טעמי מקרא, פיסוק, רווחים, סימני כיוון, תגיות עיצוב וזמנים נשמרים."));
             var all = new CheckBox { Content = Label("כל שורות העבודה — במקום הבחירה בלבד"), IsChecked = false }; panel.Children.Add(all);
-            var preview = Field("", true); preview.IsReadOnly = true; preview.Name = "NiqqudRemovalPreview"; panel.Children.Add(preview);
             var status = Label(""); status.Name = "NiqqudRemovalStatus"; panel.Children.Add(status);
+            var preview = Field("", true); preview.IsReadOnly = true; preview.Name = "NiqqudRemovalPreview"; preview.MinHeight = 220; panel.Children.Add(preview);
+            Button? remove = null;
             var checkRows = captured.Where(r => HebrewNiqqud.Count(r.Before) > 0).ToArray();
             void Update()
             {
                 var targets = checkRows.Where(r => all.IsChecked == true || selected.Contains(r.Id)).ToArray();
+                if (remove != null) remove.IsEnabled = targets.Length > 0;
                 status.Text = $"זוהו {targets.Length} שורות עם {targets.Sum(r => HebrewNiqqud.Count(r.Before))} סימני ניקוד בהיקף הנבחר.";
                 preview.Text = string.Join("\n\n", targets.Take(100).Select(r => $"כתובית {r.Number}\nלפני: {r.Before}\nאחרי: {HebrewNiqqud.Remove(r.Before)}"));
                 if (targets.Length > 100) preview.Text += "\n\nהתצוגה מציגה 100 שורות ראשונות; האישור חל על כל השורות שנספרו.";
             }
             all.IsCheckedChanged += (_, _) => Update(); Update();
-            ActionButton(panel, "הסר ניקוד בהיקף המוצג", () =>
+            remove = ActionButton(actions, "הסר ניקוד בהיקף המוצג", () =>
             {
                 var targets = checkRows.Where(r => all.IsChecked == true || selected.Contains(r.Id)).ToDictionary(r => r.Id, r => r.Before);
                 ApplyNiqqudRemoval(targets, document, generation, hash); window.Close(); return Task.CompletedTask;
-            });
-            ActionButton(panel, "סגור ללא שינוי", () => { window.Close(); return Task.CompletedTask; });
+            }); remove.Name = "NiqqudRemovalApply"; Update();
         });
     }
 }

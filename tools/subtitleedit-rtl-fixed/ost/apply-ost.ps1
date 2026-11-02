@@ -209,6 +209,7 @@ Copy-Item "$source/HebrewNiqqud.cs" 'src/ui/Features/Main/MainHelpers/HebrewNiqq
 Copy-Item "$source/MainViewModel.GuideDraft.cs" 'src/ui/Features/Main/MainViewModel.GuideDraft.cs' -Force
 Copy-Item "$source/MainViewModel.Niqqud.cs" 'src/ui/Features/Main/MainViewModel.Niqqud.cs' -Force
 Copy-Item "$source/GuideDraftNiqqudTests.cs" 'tests/UI/Features/Main/GuideDraftNiqqudTests.cs' -Force
+Copy-Item "$source/CompactDialogTests.cs" 'tests/UI/Features/Main/CompactDialogTests.cs' -Force
 Copy-Item "$source/CustomQc.cs" 'src/ui/Features/Main/MainHelpers/CustomQc.cs' -Force
 Copy-Item "$source/MainViewModel.CustomQc.cs" 'src/ui/Features/Main/MainViewModel.CustomQc.cs' -Force
 Copy-Item "$source/SeCustomQc.cs" 'src/ui/Logic/Config/SeCustomQc.cs' -Force

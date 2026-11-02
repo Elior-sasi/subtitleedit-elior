@@ -169,7 +169,7 @@ public partial class MainViewModel
     private static TextBlock MenuCaption(string text) => new() { Text = text, FlowDirection = FlowDirection.RightToLeft, TextWrapping = TextWrapping.Wrap };
     private static TextBlock Label(string text) => new() { Text = text, FontSize = 16, FlowDirection = FlowDirection.RightToLeft, TextWrapping = TextWrapping.Wrap };
     private static TextBox Field(string text = "", bool multiline = false) => new() { Text = text, FontSize = 16, FlowDirection = FlowDirection.RightToLeft, AcceptsReturn = multiline, TextWrapping = TextWrapping.Wrap, MinHeight = multiline ? 110 : 36 };
-    private void ActionButton(StackPanel panel, string text, Func<Task> action)
+    private Button ActionButton(StackPanel panel, string text, Func<Task> action)
     {
         var b = new Button { Content = text, FontSize = 16, MinHeight = 36, HorizontalAlignment = HorizontalAlignment.Stretch }; AutomationProperties.SetName(b, text);
         TextBlock? error = null;
@@ -189,15 +189,31 @@ public partial class MainViewModel
                 }
             }
             finally { b.IsEnabled = true; }
-        }; panel.Children.Add(b);
+        }; panel.Children.Add(b); return b;
+    }
+    private readonly Dictionary<Window, StackPanel> _customDialogActionPanels = new();
+    private StackPanel PinProjectActions(Window dialog)
+    {
+        var actions = new StackPanel { Name = "CustomDialogActions", Margin = new Thickness(18, 8, 18, 12), Spacing = 8 };
+        _customDialogActionPanels.Add(dialog, actions);
+        dialog.Closed += (_, _) => _customDialogActionPanels.Remove(dialog);
+        return actions;
+    }
+    private static Expander DialogDetails(StackPanel panel, string title, Control content)
+    {
+        var details = new Expander { Header = Label(title), Content = content, IsExpanded = false, HorizontalAlignment = HorizontalAlignment.Stretch };
+        panel.Children.Add(details); return details;
     }
     private Task ProjectDialog(string title, Action<StackPanel, Window> build)
     {
         if (Window == null) return Task.CompletedTask;
         var dialog = new Window { Title = title, Width = 780, Height = 680, MinWidth = 550, MinHeight = 400, WindowStartupLocation = WindowStartupLocation.CenterOwner, CanResize = true, FlowDirection = FlowDirection.LeftToRight };
-        var panel = new StackPanel { Margin = new Thickness(18), Spacing = 10 }; build(panel, dialog);
-        var close = new Button { Content = "סגור", FontSize = 16, HorizontalAlignment = HorizontalAlignment.Right }; close.Click += (_, _) => dialog.Close();
-        var dock = new DockPanel(); DockPanel.SetDock(close, Dock.Bottom); dock.Children.Add(close); dock.Children.Add(new ScrollViewer { Content = panel }); dialog.Content = dock;
+        var panel = new StackPanel { Margin = new Thickness(18), Spacing = 10 };
+        try { build(panel, dialog); } catch { _customDialogActionPanels.Remove(dialog); throw; }
+        var close = new Button { Name = "CustomDialogClose", Content = "סגור", FontSize = 16, HorizontalAlignment = HorizontalAlignment.Right }; close.Click += (_, _) => dialog.Close();
+        Control footer = close;
+        if (_customDialogActionPanels.TryGetValue(dialog, out var actions)) { actions.Children.Add(close); footer = actions; }
+        var dock = new DockPanel(); DockPanel.SetDock(footer, Dock.Bottom); dock.Children.Add(footer); dock.Children.Add(new ScrollViewer { Name = "CustomDialogBody", Content = panel }); dialog.Content = dock;
         return dialog.ShowDialog(Window);
     }
     private bool EnsureCustomProject()
@@ -256,24 +272,37 @@ public partial class MainViewModel
         if (!EnsureCustomProject()) return;
         await ProjectDialog("מילון והנחיות הפרויקט", (p, w) =>
         {
+            w.Name = "ProjectProfileDialog";
+            var actions = PinProjectActions(w);
+            var selection = new StackPanel { Spacing = 8 };
             var choices = new ComboBox { ItemsSource = _customProfiles, DisplayMemberBinding = new Avalonia.Data.Binding("Name"), SelectedItem = ActiveProfile, FontSize = 16, MinWidth = 300 };
-            p.Children.Add(Label("פרויקט פעיל — בדוק לפני כל פעולת AI")); p.Children.Add(choices);
-            ActionButton(p, "טען את הפרויקט הנבחר", () => { if (choices.SelectedItem is ProjectProfile s) { _customWork.ProfileId = s.Id; SaveCustomWork(); w.Close(); return OpenProjectProfile(); } throw new InvalidOperationException("בחר פרויקט מהרשימה תחילה, או צור פרויקט חדש בשדות שמתחתיה."); });
+            selection.Children.Add(choices);
+            ActionButton(selection, "טען את הפרויקט הנבחר", () => { if (choices.SelectedItem is ProjectProfile selected) { _customWork.ProfileId = selected.Id; SaveCustomWork(); w.Close(); return OpenProjectProfile(); } throw new InvalidOperationException("בחר פרויקט מהרשימה תחילה, או צור פרויקט חדש בשדות שמתחתיה."); });
+            var selectDetails = DialogDetails(p, "בחירת פרויקט אחר", selection); selectDetails.IsExpanded = ActiveProfile == null;
             var edit = ActiveProfile ?? new ProjectProfile();
             var name = Field(edit.Name); var alias = Field(edit.Alias); var folder = Field(edit.Folder); var prompt = Field(edit.Prompt, true); var guide = Field(edit.Guide, true);
-            p.Children.Add(Label("שם הפרויקט")); p.Children.Add(name); p.Children.Add(Label("כינוי בשם הקובץ, למשל Avatar (ללא עונה ופרק)")); p.Children.Add(alias);
-            p.Children.Add(Label("או תיקייה לשיוך אוטומטי — התאמה לא ברורה מחייבת בחירה")); p.Children.Add(folder);
-            p.Children.Add(Label("פרומפט כללי")); p.Children.Add(prompt); p.Children.Add(Label("מדריך תרגום — ניתן לערוך לפני אישור")); p.Children.Add(guide);
-            ActionButton(p, "ייבא מדריך תרגום…", async () => { var path = await PickFile("מדריך: DOCX, TXT, MD או CSV"); if (path != null) guide.Text = CustomProject.GuideText(path); });
-            ActionButton(p, "שמור פרויקט והנחיות", () => { if (string.IsNullOrWhiteSpace(name.Text)) throw new InvalidDataException("הזן שם לפרויקט."); edit.Name = name.Text.Trim(); edit.Alias = alias.Text?.Trim() ?? ""; edit.Folder = folder.Text?.Trim() ?? ""; edit.Prompt = prompt.Text ?? ""; edit.Guide = guide.Text ?? ""; if (!_customProfiles.Contains(edit)) _customProfiles.Add(edit); _customWork.ProfileId = edit.Id; SaveCustomProfiles(); SaveCustomWork(); w.Close(); return Task.CompletedTask; });
-            if (ActiveProfile != null) ActionButton(p, $"נהל פרקים קודמים ({ActiveProfile.PreviousEpisodes?.Count ?? 0})…", OpenEpisodeContext);
-            ActionButton(p, "צור פרויקט נפרד חדש", () => { _customWork.ProfileId = ""; SaveCustomWork(); w.Close(); return OpenProjectProfile(); });
+            p.Children.Add(Label("שם הפרויקט")); p.Children.Add(name);
+            p.Children.Add(Label("מדריך התרגום")); guide.MinHeight = 200; p.Children.Add(guide);
+            ActionButton(p, "ייבא מדריך מקובץ…", async () => { var path = await PickFile("מדריך: DOCX, TXT, MD או CSV"); if (path != null) guide.Text = CustomProject.GuideText(path); });
+            var preferences = new StackPanel { Spacing = 8 };
+            preferences.Children.Add(Label("שיוך לפי כינוי בשם הקובץ, למשל Avatar, או תיקייה. התאמה לא ברורה מחייבת בחירה."));
+            preferences.Children.Add(alias); preferences.Children.Add(folder);
+            preferences.Children.Add(Label("הוראות נוספות לתרגום")); preferences.Children.Add(prompt);
+            DialogDetails(p, "שיוך קבצים והוראות נוספות", preferences);
+            var glossary = new StackPanel { Spacing = 8 };
             foreach (var term in edit.Terms.ToList())
             {
-                p.Children.Add(Label($"{term.Source} ← {term.Preferred} | חלופות: {string.Join(", ", term.Variants)}"));
-                ActionButton(p, "ערוך: " + term.Preferred, () => EditTerm(term, false));
+                glossary.Children.Add(Label($"{term.Source} ← {term.Preferred} | חלופות: {string.Join(", ", term.Variants)}"));
+                ActionButton(glossary, "ערוך: " + term.Preferred, () => EditTerm(term, false));
             }
-            ActionButton(p, "הוסף שם או מונח ידנית", () => EditTerm(new ProjectTerm(), true));
+            ActionButton(glossary, "הוסף שם או מונח ידנית", () => EditTerm(new ProjectTerm(), true));
+            DialogDetails(p, $"מילון שמות ומונחים ({edit.Terms.Count})", glossary);
+            var management = new StackPanel { Spacing = 8 };
+            if (ActiveProfile != null) ActionButton(management, $"נהל פרקים קודמים ({ActiveProfile.PreviousEpisodes?.Count ?? 0})…", OpenEpisodeContext);
+            ActionButton(management, "צור פרויקט נפרד חדש", () => { _customWork.ProfileId = ""; SaveCustomWork(); w.Close(); return OpenProjectProfile(); });
+            DialogDetails(p, "כלי פרויקט נוספים", management);
+            var save = ActionButton(actions, "שמור פרויקט והנחיות", () => { if (string.IsNullOrWhiteSpace(name.Text)) throw new InvalidDataException("הזן שם לפרויקט."); edit.Name = name.Text.Trim(); edit.Alias = alias.Text?.Trim() ?? ""; edit.Folder = folder.Text?.Trim() ?? ""; edit.Prompt = prompt.Text ?? ""; edit.Guide = guide.Text ?? ""; if (!_customProfiles.Contains(edit)) _customProfiles.Add(edit); _customWork.ProfileId = edit.Id; SaveCustomProfiles(); SaveCustomWork(); w.Close(); return Task.CompletedTask; });
+            save.Name = "ProjectProfileSave";
         });
     }
     private Task EditTerm(ProjectTerm term, bool add) => ProjectDialog("אישור שם או מונח למילון", (p, w) =>
