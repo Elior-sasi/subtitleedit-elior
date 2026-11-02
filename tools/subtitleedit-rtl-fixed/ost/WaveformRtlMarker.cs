@@ -36,6 +36,11 @@ internal static class WaveformRtlMarker
     }
     internal static double TextOrigin(double left, double right, double width, bool rtl) => rtl ? right - width : left;
 
+    // Advance width is not an ink boundary: an edge glyph can overhang it.
+    // Keep a one-DIP rasterization guard inside the existing cue clip (no font changes).
+    internal static double InkOrigin(double left, double right, double advance, bool rtl, double inkLeft, double inkRight)
+        => rtl ? right - Math.Max(advance, inkRight) - 1 : left - Math.Min(0, inkLeft) + 1;
+
     // A native waveform settings item. Only this additive preference is saved on selection.
     internal static Control CreatePositionSetting(Action? save = null)
     {

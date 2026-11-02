@@ -47,11 +47,11 @@ patch(target / 'AudioVisualizer.cs', [
     ('    private void DrawParagraphText(DrawingContext context, string text, double x, double y)',
      '    private void DrawParagraphText(DrawingContext context, string text, double x, double y, double? rightEdge = null)'),
     ('        var prepared = GetPreparedParagraphText(text);\n        if (Se.Settings.Waveform.WaveformUnwrapText)',
-     '        var prepared = GetPreparedParagraphText(text);\n        double Origin(double width) => rightEdge.HasValue ? WaveformRtlMarker.TextOrigin(x, rightEdge.Value, width, prepared.RightToLeft) : x;\n        if (Se.Settings.Waveform.WaveformUnwrapText)'),
+     '        var prepared = GetPreparedParagraphText(text);\n        double Origin(double width) => rightEdge.HasValue ? WaveformRtlMarker.TextOrigin(x, rightEdge.Value, width, prepared.RightToLeft) : x;\n        double InkOrigin(FormattedText value) => rightEdge.HasValue ? WaveformRtlMarker.InkOrigin(x, rightEdge.Value, value.Width, prepared.RightToLeft, value.OverhangLeading, value.Width - value.OverhangTrailing) : x;\n        if (Se.Settings.Waveform.WaveformUnwrapText)'),
     ('new Rect(x, y, unwrapped.Width, unwrapped.Height)', 'new Rect(Origin(unwrapped.Width), y, unwrapped.Width, unwrapped.Height)'),
-    ('context.DrawText(unwrapped, new Point(x, y));', 'context.DrawText(unwrapped, new Point(Origin(unwrapped.Width), y));'),
+    ('context.DrawText(unwrapped, new Point(x, y));', 'context.DrawText(unwrapped, new Point(InkOrigin(unwrapped), y));'),
     ('blur = context.PushEffect(TextBlurEffect, new Rect(x, y, width, height));', 'blur = context.PushEffect(TextBlurEffect, new Rect(Origin(width), y, width, height));'),
-    ('context.DrawText(formattedText, new Point(x, y));', 'context.DrawText(formattedText, new Point(Origin(formattedText.Width), y));'),
+    ('context.DrawText(formattedText, new Point(x, y));', 'context.DrawText(formattedText, new Point(InkOrigin(formattedText), y));'),
     ('    private void DrawParagraphFooter(DrawingContext context, SubtitleLineViewModel paragraph,', '''    private double CustomRtlFooterWidth(SubtitleLineViewModel paragraph, double width, ref RenderContext renderCtx)
     {
         var n = renderCtx.ZoomFactor * renderCtx.SampleRate;
@@ -100,10 +100,10 @@ patch(target / 'SkiaWaveformRenderer.cs', [
     ('private void DrawParagraphTextLines(SKCanvas canvas, SkiaWaveformFrame f, SkiaParagraph p, float x, float y, byte alpha)',
      'private void DrawParagraphTextLines(SKCanvas canvas, SkiaWaveformFrame f, SkiaParagraph p, float x, float y, byte alpha, float? rightEdge = null)'),
     ('        var color = f.TextColor.WithAlpha((byte)(f.TextColor.Alpha * alpha / 255));',
-     '        var color = f.TextColor.WithAlpha((byte)(f.TextColor.Alpha * alpha / 255));\n        float Origin(float width) => rightEdge.HasValue ? (float)WaveformRtlMarker.TextOrigin(x, rightEdge.Value, width, p.RightToLeft) : x;'),
+     '        var color = f.TextColor.WithAlpha((byte)(f.TextColor.Alpha * alpha / 255));\n        float Origin(SkiaTextCache.ShapedText value) => rightEdge.HasValue ? (float)WaveformRtlMarker.InkOrigin(x, rightEdge.Value, value.Width, p.RightToLeft, value.Blob?.Bounds.Left ?? 0, value.Blob?.Bounds.Right ?? value.Width) : x;'),
     ('            DrawText(canvas, _textCache.Get(p.Unwrapped, f.FontSize, p.RightToLeft), x, y, color);',
-     '            var unwrapped = _textCache.Get(p.Unwrapped, f.FontSize, p.RightToLeft);\n            DrawText(canvas, unwrapped, Origin(unwrapped.Width), y, color);'),
-    ('            DrawText(canvas, text, x, y, color);', '            DrawText(canvas, text, Origin(text.Width), y, color);'),
+     '            var unwrapped = _textCache.Get(p.Unwrapped, f.FontSize, p.RightToLeft);\n            DrawText(canvas, unwrapped, Origin(unwrapped), y, color);'),
+    ('            DrawText(canvas, text, x, y, color);', '            DrawText(canvas, text, Origin(text), y, color);'),
     ('    private void DrawParagraphFooter(SKCanvas canvas, SkiaWaveformFrame f, SkiaParagraph p, float left, float width)', '''    private float CustomRtlFooterWidth(SkiaWaveformFrame f, SkiaParagraph p, float width)
     {
         if (p.NumberAndDurationLabel != null)

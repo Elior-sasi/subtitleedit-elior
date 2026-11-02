@@ -205,7 +205,7 @@ public partial class OstTableTests
         {
             Se.Settings.Waveform.WaveformTextFontSize = 18; Se.Settings.Waveform.WaveformUnwrapText = false;
             Se.Settings.Waveform.WaveformShowNumberAndDuration = true; Se.Settings.Waveform.WaveformShowCps = true;
-            const string original = "\u202Bילדים, קדימה, בואו!\nנפגשים עם Naruto ב־12:30.\u202C";
+            const string original = "\u202Bתחזיקו חזק.\nאני רואה Naruto ב־12:30.\u202C";
             foreach (var skia in new[] { false, true }) foreach (var bottom in new[] { false, true })
             {
                 Se.Settings.Waveform.CustomRtlMarkerAtBottom = bottom;
@@ -253,4 +253,85 @@ public partial class OstTableTests
         }
         finally { Se.Settings.Waveform = JsonSerializer.Deserialize<SeWaveform>(settings)!; vm.AudioVisualizer = originalWaveform; owner.Close(); }
     }
+    private sealed class WaveformGlyphProbe : Control
+    {
+        internal Action<DrawingContext>? Paint;
+        public override void Render(DrawingContext context)
+        {
+            context.FillRectangle(Brushes.Black, new Rect(Bounds.Size));
+            Paint?.Invoke(context);
+        }
+    }
+
+    [AvaloniaFact]
+    public void WaveformEdgeGlyphsMatchUnclippedRenderingWithRealCaptionPainters()
+    {
+        var oldSettings = JsonSerializer.Serialize(Se.Settings.Waveform);
+        var probe = new WaveformGlyphProbe();
+        var window = new Window { Width = 450, Height = 130, Content = probe };
+        var classicMethod = typeof(AudioVisualizer).GetMethod("DrawParagraphText", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var skiaMethod = typeof(SkiaWaveformRenderer).GetMethod("DrawParagraphTextLines", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var renderer = new SkiaWaveformRenderer();
+        var cache = (SkiaTextCache)typeof(SkiaWaveformRenderer).GetField("_textCache", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(renderer)!;
+        var legacyLosses = 0;
+        byte[] Capture(Action<DrawingContext> paint)
+        {
+            probe.Paint = paint; probe.InvalidateVisual(); Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+            using var frame = window.CaptureRenderedFrame()!;
+            var pixels = new byte[frame.PixelSize.Width * frame.PixelSize.Height * 4];
+            var pin = GCHandle.Alloc(pixels, GCHandleType.Pinned);
+            try { frame.CopyPixels(new PixelRect(frame.PixelSize), pin.AddrOfPinnedObject(), pixels.Length, frame.PixelSize.Width * 4); }
+            finally { pin.Free(); }
+            return pixels;
+        }
+        try
+        {
+            window.Show(); window.UpdateLayout();
+            foreach (var font in new[] { "Arial", "Segoe UI", "Tahoma" })
+            foreach (var size in new[] { 14, 18, 26 })
+            foreach (var raw in new[] { "תחזיקו חזק.", "תודה!", "ת\nאני רואה Naruto ב־12:30." })
+            foreach (var unwrap in new[] { false, true })
+            {
+                Se.Settings.Waveform.WaveformTextFontSize = size; Se.Settings.Waveform.WaveformUnwrapText = unwrap;
+                var av = new AudioVisualizer();
+                // Exercise several native font metrics without altering the user's configured font.
+                typeof(AudioVisualizer).GetField("_typeface", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(av, new Typeface(font));
+                var prepared = av.GetPreparedParagraphText(raw);
+                foreach (var right in new[] { 410.0, 410.25, 410.75 })
+                {
+                    var clip = new Rect(10, 0, right - 10, 130);
+                    void Classic(DrawingContext context) => classicMethod.Invoke(av, new object?[] { context, raw, 10d, 14d, right });
+                    var full = Capture(Classic);
+                    var clipped = Capture(context => { using (context.PushClip(clip)) Classic(context); });
+                    Assert.True(full.SequenceEqual(clipped), $"Classic edge glyph clipped: {font}/{size}/{raw}/{unwrap}/{right}");
+                    // Compare the former advance-width origin with its unclipped reference as well.
+                    var formatted = av.GetCachedParagraphText(prepared.Lines[0], true);
+                    void Legacy(DrawingContext context) => context.DrawText(formatted, new Point(right - formatted.Width, 14));
+                    var oldFull = Capture(Legacy);
+                    var oldClipped = Capture(context => { using (context.PushClip(clip)) Legacy(context); });
+                    if (!oldFull.SequenceEqual(oldClipped)) legacyLosses++;
+
+                    cache.SetFont(font, false);
+                    var f = new SkiaWaveformFrame { FontSize = size, Height = 130, TextColor = SkiaSharp.SKColors.White, UnwrapText = unwrap };
+                    var p = new SkiaParagraph { Lines = prepared.Lines, Unwrapped = prepared.Unwrapped, RightToLeft = prepared.RightToLeft };
+                    byte[] Skia(bool useClip)
+                    {
+                        using var bitmap = new SkiaSharp.SKBitmap(450, 130);
+                        using var canvas = new SkiaSharp.SKCanvas(bitmap); canvas.Clear(SkiaSharp.SKColors.Black);
+                        if (useClip) canvas.ClipRect(new SkiaSharp.SKRect(10, 0, (float)right, 130));
+                        skiaMethod.Invoke(renderer, new object?[] { canvas, f, p, 10f, 14f, (byte)255, (float)right });
+                        canvas.Flush(); return bitmap.Bytes;
+                    }
+                    Assert.True(Skia(false).SequenceEqual(Skia(true)), $"Skia edge glyph clipped: {font}/{size}/{raw}/{unwrap}/{right}");
+                }
+            }
+            Assert.True(legacyLosses > 0, "The glyph fixture must reproduce actual clipping with the previous advance-only origin.");
+            var finalAv = new AudioVisualizer();
+            probe.Paint = context => { using (context.PushClip(new Rect(10, 0, 400.25, 130))) classicMethod.Invoke(finalAv, new object?[] { context, "תחזיקו חזק.\nאני רואה Naruto ב־12:30.", 10d, 14d, 410.25d }); };
+            probe.InvalidateVisual();
+            SaveWaveformFixture(window, "Waveform-RTL-Complete-Edge-Glyph");
+        }
+        finally { Se.Settings.Waveform = JsonSerializer.Deserialize<SeWaveform>(oldSettings)!; window.Close(); }
+    }
+
 }
