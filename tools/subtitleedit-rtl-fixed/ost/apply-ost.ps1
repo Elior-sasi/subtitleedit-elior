@@ -199,6 +199,9 @@ $text = $text.Replace($needle, $replacement)
 Set-Content $path $text -Encoding utf8
 
 # Custom deterministic QC lives in the main list and shares the existing rule profiles.
+Copy-Item "$source/LocalNameSuggestions.cs" 'src/ui/Features/Main/MainHelpers/LocalNameSuggestions.cs' -Force
+Copy-Item "$source/MainViewModel.LocalNames.cs" 'src/ui/Features/Main/MainViewModel.LocalNames.cs' -Force
+Copy-Item "$source/LocalNameTests.cs" 'tests/UI/Features/Main/LocalNameTests.cs' -Force
 Copy-Item "$source/CustomQc.cs" 'src/ui/Features/Main/MainHelpers/CustomQc.cs' -Force
 Copy-Item "$source/MainViewModel.CustomQc.cs" 'src/ui/Features/Main/MainViewModel.CustomQc.cs' -Force
 Copy-Item "$source/SeCustomQc.cs" 'src/ui/Logic/Config/SeCustomQc.cs' -Force

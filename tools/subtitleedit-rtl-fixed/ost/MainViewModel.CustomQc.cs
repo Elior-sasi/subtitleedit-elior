@@ -108,6 +108,7 @@ public partial class MainViewModel
     private void StopCustomQc()
     {
         _customQcTimer?.Stop();
+        _customLocalNamesCancel?.Cancel();
         _customQcMenu?.Hide();
         if (_customQcRows != null) _customQcRows.CollectionChanged -= CustomQcCollectionChanged;
         _customQcRows = null;
@@ -124,6 +125,7 @@ public partial class MainViewModel
     {
         if (!ReferenceEquals(_customQcRows, Subtitles)) { WatchCustomQcRows(); _customQcDirty = true; }
         CurrentDetectedNameSuggestions();
+        CurrentLocalNameSuggestions();
         var g = Se.Settings.General;
         var signature = $"{g.CurrentProfile}|{g.SubtitleLineMaximumLength}|{g.MaxNumberOfLines}|{g.SubtitleMaximumCharactersPerSeconds}|{g.SubtitleMinimumDisplayMilliseconds}|{g.SubtitleMaximumDisplayMilliseconds}|{g.MinimumBetweenLines.GetMilliseconds()}|{g.CpsLineLengthStrategy}|{g.CpsLineLengthIgnoreTagsRegex}|{CustomQcGlossary()}|{System.Text.Json.JsonSerializer.Serialize(ActiveProfile?.Terms)}";
         if (signature != _customQcSettings) { _customQcSettings = signature; _customQcDirty = true; }
@@ -143,6 +145,7 @@ public partial class MainViewModel
         var rows = Subtitles.Where(r => !r.IsReferenceOnly && !r.IsComment && !r.IsDefault).Select(r => new QcRow(r.Id, r.Number, r.Text, r.StartTime, r.EndTime, r.CharactersPerSecond)).ToList();
         _customQcIssues = CustomQc.Scan(rows, new(g.SubtitleLineMaximumLength, g.MaxNumberOfLines, g.SubtitleMaximumCharactersPerSeconds,
             g.SubtitleMinimumDisplayMilliseconds, g.SubtitleMaximumDisplayMilliseconds, g.MinimumBetweenLines.GetMilliseconds()), terms);
+        var localNames = CurrentLocalNameSuggestions().GroupBy(h => h.RowId).ToDictionary(g => g.Key, g => string.Join("\n", g.Take(3).Select(h => h.Message)));
         var byRow = _customQcIssues.GroupBy(i => i.RowId).ToDictionary(x => x.Key, x => string.Join("\n", x.Select(i => i.Message).Distinct()));
         foreach (var row in Subtitles)
         {
@@ -150,6 +153,8 @@ public partial class MainViewModel
             row.CustomNameSummary = row.IsReferenceOnly || row.IsComment || row.IsDefault
                 ? string.Empty : CustomQc.CombineNameSummaries(CustomQc.NameSummary(row.Text, terms),
                     CustomQc.DetectedNameSummary(row.Text, ActiveProfile?.Guide ?? "", detected));
+            if (!row.IsReferenceOnly && !row.IsComment && !row.IsDefault && localNames.TryGetValue(row.Id, out var local))
+                row.CustomNameSummary = row.CustomNameSummary.StartsWith("✕", StringComparison.Ordinal) ? row.CustomNameSummary + "\n" + local : local + (row.CustomNameSummary.Length > 0 ? "\n" + row.CustomNameSummary : "");
         }
         if (_customQcButton != null)
         {
@@ -176,6 +181,7 @@ public partial class MainViewModel
         ScanCustomQc();
         menu.Items.Clear();
         menu.Items.Add(QcItem($"פרופיל לקוח: {Se.Settings.General.CurrentProfile} — בחירה ועריכה…", () => ShowChooseProfileCommand.Execute(null)));
+        menu.Items.Add(QcItem("כתיב שונה בשמות — בדיקה מקומית ללא AI…", () => { _ = OpenLocalNameSuggestions(); }));
         menu.Items.Add(QcItem("זהה שמות מהמדריך ומהפרק באמצעות Gemini…", () => { _ = FindProjectTerms(); }));
         menu.Items.Add(QcItem("מילון שמות ומונחים לפרופיל…", () => Dispatcher.UIThread.Post(ShowCustomQcGlossary)));
         menu.Items.Add(QcItem("ניקוי תווים נסתרים בשורות מסומנות…", () => ShowToolsRemoveUnicodeCharactersSelectedLinesCommand.Execute(null)));
