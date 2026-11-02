@@ -378,3 +378,13 @@ jobs:
           path: dialog-layout-smoke/*
           if-no-files-found: error
           retention-days: 7
+
+      - name: Upload synthetic waveform RTL layout screenshots
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v5
+        with:
+          name: Waveform-RTL-Layout-Smoke
+          path: waveform-rtl-smoke/*
+          if-no-files-found: error
+          retention-days: 7
