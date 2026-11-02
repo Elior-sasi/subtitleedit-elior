@@ -75,12 +75,14 @@ public partial class AutoTranslateViewModel
         if (!CustomGuideEnabled || _customGuideProfile == null) return true;
         if (_customGuideAuditBusy || _translationInProgress || _translationStarting) { StatusText = "המתן לסיום התרגום או הביקורת."; return false; }
         if (SelectedAutoTranslator is not GeminiTranslate gemini) { StatusText = "ביקורת המדריך דורשת Google Gemini, או כיבוי מפורש של המדריך."; return false; }
+        if ((ModelText ?? "").Trim() != Configuration.Settings.Tools.GeminiModel || (ApiKeyText ?? "").Trim() != (Configuration.Settings.Tools.GeminiProApiKey ?? "").Trim())
+        { StatusText = "המודל או המפתח בחלון השתנו מאז התרגום. הפעל תרגום עם ההגדרות שבחרת ואז אשר לביקורת."; return false; }
         var snapshot = Rows.Select((row, index) => (Row: row, Source: row.Text ?? "", Translation: row.TranslatedText ?? "", Key: "row" + (index + 1))).ToArray();
         var candidates = snapshot.Where(x => !string.IsNullOrWhiteSpace(x.Translation)).Select(x => new GuideCandidate(x.Key, x.Source, x.Translation)).ToArray();
         if (candidates.Length == 0) { StatusText = "אין הצעות לתרגום לבדיקה."; return false; }
         var profile = _customGuideProfile;
-        var model = Configuration.Settings.Tools.GeminiModel;
-        bool Fresh() => CustomGuideEnabled && ReferenceEquals(_customGuideProfile, profile) && ReferenceEquals(SelectedAutoTranslator, gemini) && model == Configuration.Settings.Tools.GeminiModel &&
+        var model = Configuration.Settings.Tools.GeminiModel; var modelText = ModelText; var keyText = ApiKeyText;
+        bool Fresh() => CustomGuideEnabled && ReferenceEquals(_customGuideProfile, profile) && ReferenceEquals(SelectedAutoTranslator, gemini) && model == Configuration.Settings.Tools.GeminiModel && ModelText == modelText && ApiKeyText == keyText &&
             Rows.Count == snapshot.Length && snapshot.Select((s, i) => ReferenceEquals(Rows[i], s.Row) && Rows[i].Text == s.Source && (Rows[i].TranslatedText ?? "") == s.Translation).All(v => v);
         _customGuideAuditBusy = true; IsTranslateEnabled = false;
         if (_cancellationTokenSource.IsCancellationRequested) _cancellationTokenSource = new CancellationTokenSource();

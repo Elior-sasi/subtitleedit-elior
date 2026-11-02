@@ -12,6 +12,8 @@ using System.Threading.Tasks;
 using Avalonia.Headless.XUnit;
 using Microsoft.Extensions.DependencyInjection;
 using Nikse.SubtitleEdit;
+using Nikse.SubtitleEdit.Core.Common;
+using Nikse.SubtitleEdit.Logic.Config;
 using Nikse.SubtitleEdit.Features.Main.MainHelpers;
 using Nikse.SubtitleEdit.Features.Translate;
 using Nikse.SubtitleEdit.UiLogic.AutoTranslate;
@@ -96,6 +98,7 @@ public partial class OstTableTests
         var services = new ServiceCollection(); services.AddSubtitleEditServices(); Locator.Services = services.BuildServiceProvider();
         var vm = Locator.Services.GetRequiredService<AutoTranslateViewModel>(); var p = AuditProfile(); vm.ConfigureCustomGuide(p);
         var gemini = Assert.Single(vm.AutoTranslators.OfType<GeminiTranslate>()); vm.SelectedAutoTranslator = gemini; Assert.True(vm.TryConfigureCustomGuideEngine(gemini, out _));
+        gemini.Initialize(); vm.ModelText = Configuration.Settings.Tools.GeminiModel; vm.ApiKeyText = Configuration.Settings.Tools.GeminiProApiKey;
         var original = (HttpClient)typeof(GeminiTranslate).GetField("_httpClient", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(gemini)!;
         var saved = JsonSerializer.Deserialize<ProjectProfile>(JsonSerializer.Serialize(p))!;
         p.Guide = "LATER_GUIDE_NOT_SENT";
@@ -121,6 +124,7 @@ public partial class OstTableTests
         var services = new ServiceCollection(); services.AddSubtitleEditServices(); Locator.Services = services.BuildServiceProvider();
         var vm = Locator.Services.GetRequiredService<AutoTranslateViewModel>(); var p = AuditProfile(); vm.ConfigureCustomGuide(p);
         var gemini = Assert.Single(vm.AutoTranslators.OfType<GeminiTranslate>()); vm.SelectedAutoTranslator = gemini; Assert.True(vm.TryConfigureCustomGuideEngine(gemini, out _));
+        gemini.Initialize(); vm.ModelText = Configuration.Settings.Tools.GeminiModel; vm.ApiKeyText = Configuration.Settings.Tools.GeminiProApiKey;
         var field = typeof(GeminiTranslate).GetField("_httpClient", BindingFlags.Instance | BindingFlags.NonPublic)!; var original = field.GetValue(gemini);
         try
         {
@@ -145,7 +149,8 @@ public partial class OstTableTests
             var vm = Locator.Services.GetRequiredService<AutoTranslateViewModel>(); var p = AuditProfile(); vm.ConfigureCustomGuide(p);
             var gemini = Assert.Single(vm.AutoTranslators.OfType<GeminiTranslate>()); vm.SelectedAutoTranslator = gemini;
             vm.Rows.Clear(); vm.Rows.Add(new TranslateRow { Text = "Hello", TranslatedText = "שלום" });
-            var field = typeof(GeminiTranslate).GetField("_httpClient", BindingFlags.Instance | BindingFlags.NonPublic)!; var original = field.GetValue(gemini);
+            gemini.Initialize(); vm.ModelText = Configuration.Settings.Tools.GeminiModel; vm.ApiKeyText = Configuration.Settings.Tools.GeminiProApiKey;
+        var field = typeof(GeminiTranslate).GetField("_httpClient", BindingFlags.Instance | BindingFlags.NonPublic)!; var original = field.GetValue(gemini);
             var handler = new AuditHttpHandler { Respond = (_, _) =>
             {
                 if (change == "text") vm.Rows[0].TranslatedText = "נערך בזמן הביקורת";

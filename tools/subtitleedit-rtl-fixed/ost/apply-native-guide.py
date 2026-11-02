@@ -34,6 +34,7 @@ patch('src/libuilogic/AutoTranslate/GeminiTranslate.cs',
         public async Task<string> RequestCustomGuideReview(string prompt, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
+            if (_httpClient == null) Initialize();
             if (prompt.Length > 250000) throw new System.IO.InvalidDataException("Guide review request is too large.");
             var payload = System.Text.Json.JsonSerializer.Serialize(new { contents = new[] { new { role = "user", parts = new[] { new { text = prompt } } } }, generationConfig = new { maxOutputTokens = 32768 } });
             using var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
