@@ -118,6 +118,7 @@ public partial class AutoTranslateViewModel
 
     private async Task<bool> PrepareCustomGuideTranslation(IAutoTranslator translator)
     {
+        if (_customGuideAuditBusy) { StatusText = "ביקורת מדריך מתבצעת. המתן או בטל לפני תרגום חדש."; return false; }
         if (TryConfigureCustomGuideEngine(translator, out var error)) return true;
         StatusText = error;
         await MessageBox.Show(Window!, "מדריך הפרויקט בתרגום אוטומטי", error, MessageBoxButtons.OK, MessageBoxIcon.Information);

@@ -14,6 +14,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Nikse.SubtitleEdit;
 using Nikse.SubtitleEdit.Core.Common;
 using Nikse.SubtitleEdit.Logic.Config;
+using Nikse.SubtitleEdit.Features.Main;
 using Nikse.SubtitleEdit.Features.Main.MainHelpers;
 using Nikse.SubtitleEdit.Features.Translate;
 using Nikse.SubtitleEdit.UiLogic.AutoTranslate;

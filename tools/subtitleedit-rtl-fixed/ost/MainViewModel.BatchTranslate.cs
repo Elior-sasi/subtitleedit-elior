@@ -117,7 +117,7 @@ public partial class MainViewModel
                     var json = await CustomProject.AskAsync(http, key, prompt, cts.Token, model);
                     RequireTranslationGuide(profile);
                     if (seq != requestSeq) return; // a newer selection replaced this request: its answer is discarded
-                    var parsed = CustomTranslateBatch.Parse(json, items);
+                    var parsed = CustomTranslateBatch.Parse(json, items).Select(prop => prop.Problem == null ? prop with { Text = PrepareBatchTranslation(prop.Text) } : prop).ToList();
                     var reviewItems = parsed.Where(prop => prop.Problem == null).Select(prop => new GuideCandidate(prop.Key, items.First(i => i.Key == prop.Key).English, prop.Text)).ToArray();
                     GuideReport? report = null;
                     if (reviewItems.Length > 0)
@@ -153,7 +153,7 @@ public partial class MainViewModel
                 if (approved.Count == 0) throw new InvalidOperationException("לא סומנו הצעות להחלה.");
                 RequireTranslationGuide(profile);
                 if (reviewedChoice != ChoiceFingerprint()) throw new InvalidOperationException("בחירת המקור השתנתה; שלח מחדש לביקורת.");
-                ApplyBatchTranslations(document, snapshot, approved.Select(x => (x.Item.Row.Id, x.Proposal.Text)).ToList());
+                ApplyBatchTranslations(document, snapshot, approved.Select(x => (x.Item.Row.Id, x.Proposal.Text)).ToList(), preserveReviewedText: true);
                 ShowStatus($"הוחלו {approved.Count} הצעות שאישרת. ניתן לבטל ב־Undo.", 8000);
                 w.Close();
                 return Task.CompletedTask;
@@ -162,9 +162,17 @@ public partial class MainViewModel
         });
     }
 
+    internal static string PrepareBatchTranslation(string text)
+    {
+        if (!CustomTranslateBatch.IsHebrew(text)) return text;
+        var broken = Utilities.AutoBreakLine(text, Se.Settings.General.SubtitleLineMaximumLength, 0, "he");
+        string Words(string value) => string.Join(" ", value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return CustomTranslateBatch.Tags(broken) == CustomTranslateBatch.Tags(text) && Words(broken) == Words(text) ? broken : text;
+    }
+
     // Applies only approved texts to rows that are still exactly as sent. Ids, times, order,
     // notes, OST markers, director questions and review states are left untouched.
-    internal void ApplyBatchTranslations(string document, IReadOnlyList<BatchSnapshot> sent, IReadOnlyList<(Guid Id, string Text)> approved)
+    internal void ApplyBatchTranslations(string document, IReadOnlyList<BatchSnapshot> sent, IReadOnlyList<(Guid Id, string Text)> approved, bool preserveReviewedText = false)
     {
         if (document != (_subtitleFileName ?? "")) throw new InvalidOperationException("הקובץ הפעיל השתנה. לא בוצע שינוי.");
         var changes = new List<(SubtitleLineViewModel Row, string Text)>();
@@ -176,15 +184,9 @@ public partial class MainViewModel
                 throw new InvalidOperationException("שורה השתנתה מאז השליחה. לא בוצע שינוי; שלח שוב את השורות שהשתנו.");
             var expectedTags = string.IsNullOrWhiteSpace(before.Text) ? null : CustomTranslateBatch.Tags(before.Text);
             if (expectedTags != null && CustomTranslateBatch.Tags(proposed) != expectedTags) throw new System.IO.InvalidDataException("הצעה שינתה תגיות. לא בוצע שינוי.");
-            // Existing Hebrew line-break rules, applied after the wording was approved; kept only if tags and words are unchanged.
-            var text = proposed;
-            if (CustomTranslateBatch.IsHebrew(text))
-            {
-                var broken = Utilities.AutoBreakLine(text, Se.Settings.General.SubtitleLineMaximumLength, 0, "he");
-                string Words(string s) => string.Join(" ", s.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-                if (CustomTranslateBatch.Tags(broken) == CustomTranslateBatch.Tags(text) && Words(broken) == Words(text)) text = broken;
-            }
-            changes.Add((row, text));
+            // Reviewed proposals were already line-broken BEFORE audit/preview. Apply those
+            // exact bytes even if the user changed line-break settings while reviewing.
+            changes.Add((row, preserveReviewedText ? proposed : PrepareBatchTranslation(proposed)));
         }
         var beforeSnapshot = MakeUndoRedoObject("לפני תרגום אצווה שאושר");
         if (_undoRedoManager.UndoList.LastOrDefault()?.Hash != beforeSnapshot.Hash) _undoRedoManager.Do(beforeSnapshot);

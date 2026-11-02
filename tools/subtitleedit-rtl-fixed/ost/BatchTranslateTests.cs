@@ -157,6 +157,13 @@ public partial class OstTableTests
             Assert.Equal(ids, vm.Subtitles.Select(r => (r.Id, r.StartTime, r.EndTime)).ToList());
             vm.UndoCommand.Execute(null);
             Assert.Equal(new[] { "", "<i>טיוטה</i>", "לא נגעו בי" }, vm.Subtitles.Select(r => r.Text));
+            // Once a proposal was audited and displayed, applying it cannot silently reflow
+            // its lines with current settings after approval.
+            var exactReviewed = "<i>זאת שורה ארוכה שמוצגת בדיוק כך\nוזאת השורה השנייה שאושרה</i>";
+            vm.ApplyBatchTranslations("test.srt", sent, new[] { (b.Id, exactReviewed) }, preserveReviewedText: true);
+            Assert.Equal(exactReviewed, b.Text);
+            vm.UndoCommand.Execute(null);
+            Assert.Equal("<i>טיוטה</i>", b.Text);
         }
         finally { window.Close(); }
     }
