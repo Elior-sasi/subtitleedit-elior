@@ -83,6 +83,11 @@ public partial class OstTableTests
             var original = JsonSerializer.Serialize(profile); var hash = vm.GetFastHash();
             var pending = (Task)typeof(MainViewModel).GetMethod("OpenGuideDraft", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(vm, null)!; await FeedbackDrain();
             var dialog = Assert.Single(owner.OwnedWindows, w => w.Name == "GuideDraftDialog");
+            Assert.Single(dialog.GetVisualDescendants().OfType<Button>(), b => (b.Content as string)?.StartsWith("חפש ברשת וצור מדריך עם מקורות") == true);
+            var copy = Assert.Single(dialog.GetVisualDescendants().OfType<Button>(), b => b.Content as string == "העתק את המחקר שבדקתי לטיוטת המדריך");
+            copy.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await FeedbackDrain();
+            Assert.Contains("בצע חיפוש", Assert.Single(dialog.GetVisualDescendants().OfType<TextBlock>(), t => t.Name == "CustomActionError").Text);
+            Assert.Equal(original, JsonSerializer.Serialize(profile));
             var button = Assert.Single(dialog.GetVisualDescendants().OfType<Button>(), b => b.Content as string == "צור שלד מקומי ללא AI"); button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await FeedbackDrain();
             var preview = Assert.Single(dialog.GetVisualDescendants().OfType<TextBox>(), b => b.Name == "GuideDraftPreview"); Assert.Contains("Avatar", preview.Text); Assert.False(preview.IsReadOnly);
             preview.Text += "\nהנחיה שלי";

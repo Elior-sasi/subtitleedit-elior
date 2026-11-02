@@ -203,6 +203,8 @@ Copy-Item "$source/LocalNameSuggestions.cs" 'src/ui/Features/Main/MainHelpers/Lo
 Copy-Item "$source/MainViewModel.LocalNames.cs" 'src/ui/Features/Main/MainViewModel.LocalNames.cs' -Force
 Copy-Item "$source/LocalNameTests.cs" 'tests/UI/Features/Main/LocalNameTests.cs' -Force
 Copy-Item "$source/GuideDraft.cs" 'src/ui/Features/Main/MainHelpers/GuideDraft.cs' -Force
+Copy-Item "$source/GuideResearch.cs" 'src/ui/Features/Main/MainHelpers/GuideResearch.cs' -Force
+Copy-Item "$source/GuideResearchTests.cs" 'tests/UI/Features/Main/GuideResearchTests.cs' -Force
 Copy-Item "$source/HebrewNiqqud.cs" 'src/ui/Features/Main/MainHelpers/HebrewNiqqud.cs' -Force
 Copy-Item "$source/MainViewModel.GuideDraft.cs" 'src/ui/Features/Main/MainViewModel.GuideDraft.cs' -Force
 Copy-Item "$source/MainViewModel.Niqqud.cs" 'src/ui/Features/Main/MainViewModel.Niqqud.cs' -Force
