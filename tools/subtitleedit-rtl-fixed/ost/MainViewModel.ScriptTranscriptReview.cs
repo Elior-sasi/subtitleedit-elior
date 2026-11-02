@@ -22,15 +22,25 @@ public partial class MainViewModel
         var media = string.IsNullOrEmpty(initialMedia) ? _videoFileName ?? "" : initialMedia;
         await ProjectDialog("תסריט שונה מהדיבור — השוואה ואישור", (panel, dialog) =>
         {
+            dialog.Name = "ScriptReviewDialog";
+            var actions = PinProjectActions(dialog);
+            var preparation = new StackPanel { Spacing = 8 }; var review = new StackPanel { Spacing = 8 }; var final = new StackPanel { Spacing = 8 };
+            var stages = new TabControl { Name = "ScriptReviewStages", SelectedIndex = 0, ItemsSource = new[] {
+                new TabItem { Header = Label("1. קבצים"), Content = preparation },
+                new TabItem { Header = Label("2. בדיקת שורות"), Content = review },
+                new TabItem { Header = Label("3. סיכום וייבוא"), Content = final } } };
+            panel.Children.Add(Label("טען תסריט ותמלול באותה שפה, בדוק כל שורה ואז אשר ייבוא למסמך חדש.")); panel.Children.Add(stages);
             var closed = false; var busy = false; CancellationTokenSource? running = null;
             dialog.Closed += (_, _) => { closed = true; running?.Cancel(); };
             var transcript = new List<ScriptTranscriptReview.Cue>();
             string[] script = Array.Empty<string>();
             ScriptTranscriptReview.Suggestion?[] proposals = Array.Empty<ScriptTranscriptReview.Suggestion?>();
             var decisions = new Dictionary<int, ScriptTranscriptReview.Decision>();
-            panel.Children.Add(Label("שמע ותסריט באותה שפה, עם הבדלי ניסוח. טען תמלול SRT מתוזמן או הפק תמלול מקומי. ההצעות מבוססות על דמיון מילולי בלבד; שגיאות תמלול ומשפטים חוזרים מחייבים בדיקה. אין שינוי במסמך הפתוח לפני ייבוא מפורש למסמך חדש."));
-            panel.Children.Add(Label("הפרד קטעי תסריט בשורה ריקה כדי לשמור קטע מרובה שורות. ללא שורות ריקות, כל שורה היא קטע נפרד. אין חלוקה מחדש או שינוי בתגי עיצוב; בדוק אורך ושבירת שורות לאחר הייבוא."));
-            var editor = Field(initialScript, true); editor.MinHeight = 160; panel.Children.Add(Label("התסריט לעבודה — קובץ המקור נשמר ללא שינוי")); panel.Children.Add(editor);
+            var help = new StackPanel { Spacing = 8 };
+            var helpSection = DialogDetails(preparation, "איך מכינים ומה חשוב לבדוק?", help); helpSection.Name = "ScriptReviewHelp";
+            help.Children.Add(Label("שמע ותסריט באותה שפה, עם הבדלי ניסוח. טען תמלול SRT מתוזמן או הפק תמלול מקומי. ההצעות מבוססות על דמיון מילולי בלבד; שגיאות תמלול ומשפטים חוזרים מחייבים בדיקה. אין שינוי במסמך הפתוח לפני ייבוא מפורש למסמך חדש."));
+            help.Children.Add(Label("הפרד קטעי תסריט בשורה ריקה כדי לשמור קטע מרובה שורות. ללא שורות ריקות, כל שורה היא קטע נפרד. אין חלוקה מחדש או שינוי בתגי עיצוב; בדוק אורך ושבירת שורות לאחר הייבוא."));
+            var editor = Field(initialScript, true); editor.Name = "ScriptReviewText"; editor.MinHeight = 160; preparation.Children.Add(Label("התסריט לעבודה — קובץ המקור נשמר ללא שינוי")); preparation.Children.Add(editor);
             var mediaLabel = Label("שמע / וידאו: " + (File.Exists(media) ? media : "טרם נבחר"));
             var transcriptLabel = Label("טרם נטען תמלול מתוזמן");
             var status = Label("");
@@ -44,10 +54,21 @@ public partial class MainViewModel
             var omissions = new CheckBox { Content = Label("בדקתי את הסיכום: שורות שדילגתי עליהן ודיבור שלא שויך לא ייכללו בייבוא"), IsChecked = false };
             var summary = Field("", true); summary.IsReadOnly = true;
             var changing = false;
+            Button? compare = null, approveRow = null, skipRow = null, import = null, cancelButton = null;
+            var progress = new ProgressBar { IsIndeterminate = true, Height = 8, IsVisible = false, Name = "ScriptReviewProgress" }; panel.Children.Insert(1, progress);
+            void UpdateActions()
+            {
+                var stage = stages.SelectedIndex; progress.IsVisible = busy;
+                if (compare != null) { compare.IsVisible = stage == 0; compare.IsEnabled = !busy; }
+                foreach (var button in new[] { approveRow, skipRow }) if (button != null) { button.IsVisible = stage == 1; button.IsEnabled = !busy && rows.SelectedIndex >= 0 && rows.SelectedIndex < script.Length; }
+                if (import != null) { import.IsVisible = stage == 2; import.IsEnabled = !busy && script.Length > 0 && decisions.Count == script.Length && omissions.IsChecked == true; }
+                if (cancelButton != null) { cancelButton.IsVisible = busy; cancelButton.IsEnabled = busy; }
+            }
+            stages.SelectionChanged += (_, _) => UpdateActions(); omissions.IsCheckedChanged += (_, _) => UpdateActions();
             void Invalidate()
             {
                 script = Array.Empty<string>(); proposals = Array.Empty<ScriptTranscriptReview.Suggestion?>(); decisions.Clear();
-                rows.ItemsSource = null; original.Text = spoken.Text = summary.Text = ""; differences.Text = ""; omissions.IsChecked = false;
+                rows.ItemsSource = null; original.Text = spoken.Text = summary.Text = ""; differences.Text = ""; omissions.IsChecked = false; UpdateActions();
             }
             void UpdateSummary()
             {
@@ -55,7 +76,7 @@ public partial class MainViewModel
                 foreach (var d in decisions.Values.Where(d => !d.Skip)) for (var n = d.First; n <= d.Last; n++) used.Add(n);
                 summary.Text = $"אושרו: {decisions.Values.Count(d => !d.Skip)} | דילוג מפורש: {decisions.Values.Count(d => d.Skip)} | טרם הוחלט: {script.Length - decisions.Count}\nדיבור שלא שויך (ייתכן שגיאת תמלול או דיבור שחסר בתסריט):\n" +
                     string.Join("\n", transcript.Select((c, i) => (c, i)).Where(x => !used.Contains(x.i)).Select(x => $"{x.i + 1}: {x.c.Text}"));
-                omissions.IsChecked = false;
+                omissions.IsChecked = false; UpdateActions();
             }
             void DisplayRange()
             {
@@ -97,33 +118,33 @@ public partial class MainViewModel
                 if (i >= 0) { decisions.Remove(i); RefreshRows(i); UpdateSummary(); }
                 DisplayRange();
             }
-            rows.SelectionChanged += (_, _) => SelectRow();
+            rows.SelectionChanged += (_, _) => { SelectRow(); UpdateActions(); };
             first.ValueChanged += (_, _) => ChangedChoice(); last.ValueChanged += (_, _) => ChangedChoice(); choice.SelectionChanged += (_, _) => ChangedChoice();
             editor.TextChanged += (_, _) => { if (!busy) Invalidate(); };
-            ActionButton(panel, "טען תסריט Word / TXT / SRT / MD…", async () =>
+            ActionButton(preparation, "טען תסריט Word / TXT / SRT / MD…", async () =>
             {
                 if (busy) return;
                 var files = await dialog.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions { AllowMultiple = false, FileTypeFilter = new[] { new FilePickerFileType("תסריט") { Patterns = new[] { "*.docx", "*.txt", "*.srt", "*.md" } } } });
                 var path = files.FirstOrDefault()?.TryGetLocalPath(); if (path == null) return;
                 var text = await Task.Run(() => ScriptImport.Read(path)); if (!closed) editor.Text = text;
             });
-            panel.Children.Add(mediaLabel);
-            ActionButton(panel, "בחר שמע או וידאו…", async () =>
+            preparation.Children.Add(mediaLabel);
+            ActionButton(preparation, "בחר שמע או וידאו…", async () =>
             {
                 if (busy) return;
                 var files = await dialog.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions { AllowMultiple = false, FileTypeFilter = new[] { new FilePickerFileType("שמע או וידאו") { Patterns = new[] { "*.wav", "*.mp3", "*.m4a", "*.flac", "*.mkv", "*.mp4", "*.mov", "*.webm" } } } });
                 var path = files.FirstOrDefault()?.TryGetLocalPath(); if (path == null || closed) return;
                 media = path; transcript.Clear(); transcriptLabel.Text = "המדיה השתנתה. טען או הפק שוב תמלול המתאים לה."; mediaLabel.Text = "שמע / וידאו: " + media; Invalidate();
             });
-            panel.Children.Add(Label("תמלול אוטומטי עלול לטעות. בדוק שבחרת את אותו הסרט, ערוץ השמע והשפה. אין פיצוי אוטומטי על היסט וידאו או התאמה לגרסה אחרת."));
-            panel.Children.Add(Label("בתמלול המקומי בחר עברית ומודל Whisper רב־לשוני, ללא הסיומת .en. הורדת מנוע ומודל נדרשת רק אם אינם מותקנים. אפשר גם לטעון SRT מכל כלי תמלול אחר."));
-            panel.Children.Add(transcriptLabel);
+            help.Children.Add(Label("תמלול אוטומטי עלול לטעות. בדוק שבחרת את אותו הסרט, ערוץ השמע והשפה. אין פיצוי אוטומטי על היסט וידאו או התאמה לגרסה אחרת."));
+            help.Children.Add(Label("בתמלול המקומי בחר עברית ומודל Whisper רב־לשוני, ללא הסיומת .en. הורדת מנוע ומודל נדרשת רק אם אינם מותקנים. אפשר גם לטעון SRT מכל כלי תמלול אחר."));
+            preparation.Children.Add(transcriptLabel);
             void SetTranscript(List<ScriptTranscriptReview.Cue> cues, string description)
             {
                 ScriptTranscriptReview.Validate(cues); transcript = cues; first.Maximum = last.Maximum = cues.Count;
                 Invalidate(); transcriptLabel.Text = description + $" — {cues.Count} שורות";
             }
-            ActionButton(panel, "טען תמלול מתוזמן SRT שכבר יש לי…", async () =>
+            ActionButton(preparation, "טען תמלול מתוזמן SRT שכבר יש לי…", async () =>
             {
                 if (busy) return;
                 var files = await dialog.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions { AllowMultiple = false, FileTypeFilter = new[] { new FilePickerFileType("תמלול מתוזמן") { Patterns = new[] { "*.srt" } } } });
@@ -132,7 +153,7 @@ public partial class MainViewModel
                 var text = await File.ReadAllTextAsync(path); if (closed) return;
                 SetTranscript(ScriptTranscriptReview.ReadSrt(text), Path.GetFileName(path));
             });
-            ActionButton(panel, "הפק תמלול עברי מקומי מהשמע…", async () =>
+            ActionButton(preparation, "הפק תמלול עברי מקומי מהשמע…", async () =>
             {
                 if (busy) return;
                 if (!File.Exists(media)) throw new InvalidDataException("בחר שמע או וידאו קיים.");
@@ -142,27 +163,28 @@ public partial class MainViewModel
                 if (vm.DoTranslateToEnglish) throw new InvalidDataException("התוצאה תורגמה לאנגלית. הפק תמלול באותה שפה, ללא תרגום.");
                 SetTranscript(vm.TranscribedSubtitle.Paragraphs.Select(p => new ScriptTranscriptReview.Cue(p.StartTime.TotalMilliseconds, p.EndTime.TotalMilliseconds, p.Text)).ToList(), "תמלול מקומי — בדוק מול השמע");
             });
-            ActionButton(panel, "השווה והצג הצעות — ללא אישור אוטומטי", async () =>
+            compare = ActionButton(actions, "השווה והצג הצעות — ללא אישור אוטומטי", async () =>
             {
                 if (busy) return;
                 Invalidate(); script = ScriptTranscriptReview.PrepareRows(editor.Text ?? "");
-                busy = true; editor.IsEnabled = false;
+                busy = true; editor.IsEnabled = false; UpdateActions();
                 using var cancel = new CancellationTokenSource(TimeSpan.FromMinutes(2)); running = cancel;
                 try
                 {
                     proposals = await Task.Run(() => ScriptTranscriptReview.Compare(script, transcript, cancel.Token), cancel.Token);
                     if (closed) return;
-                    RefreshRows(0); SelectRow(); UpdateSummary();
+                    RefreshRows(0); SelectRow(); UpdateSummary(); stages.SelectedIndex = 1;
                 }
-                finally { busy = false; editor.IsEnabled = true; running = null; }
+                finally { busy = false; editor.IsEnabled = true; running = null; UpdateActions(); }
             });
-            ActionButton(panel, "בטל השוואה", () => { running?.Cancel(); return Task.CompletedTask; });
-            panel.Children.Add(rows); panel.Children.Add(status);
-            panel.Children.Add(Label("התסריט המקורי לכתובית הנבחרת")); panel.Children.Add(original);
-            panel.Children.Add(Label("שורת התמלול הראשונה בטווח")); panel.Children.Add(first);
-            panel.Children.Add(Label("שורת התמלול האחרונה בטווח — ניתן לתקן ידנית")); panel.Children.Add(last);
-            panel.Children.Add(spoken); panel.Children.Add(differences); panel.Children.Add(choice);
-            ActionButton(panel, "אשר את הטווח והנוסח לשורה הנבחרת", () =>
+            compare.Name = "ScriptReviewCompare";
+            cancelButton = ActionButton(actions, "בטל השוואה", () => { running?.Cancel(); return Task.CompletedTask; });
+            review.Children.Add(rows); review.Children.Add(status);
+            review.Children.Add(Label("התסריט המקורי לכתובית הנבחרת")); review.Children.Add(original);
+            review.Children.Add(Label("שורת התמלול הראשונה בטווח")); review.Children.Add(first);
+            review.Children.Add(Label("שורת התמלול האחרונה בטווח — ניתן לתקן ידנית")); review.Children.Add(last);
+            review.Children.Add(spoken); review.Children.Add(differences); review.Children.Add(choice);
+            approveRow = ActionButton(actions, "אשר את הטווח והנוסח לשורה הנבחרת", () =>
             {
                 if (busy || rows.SelectedIndex < 0 || rows.SelectedIndex >= script.Length) return Task.CompletedTask;
                 var i = rows.SelectedIndex; var d = new ScriptTranscriptReview.Decision(i, (int)(first.Value ?? 1) - 1, (int)(last.Value ?? 1) - 1, choice.SelectedIndex == 1 ? ScriptTranscriptReview.TextChoice.Transcript : ScriptTranscriptReview.TextChoice.Script);
@@ -170,20 +192,25 @@ public partial class MainViewModel
                 _ = ScriptTranscriptReview.Build(new[] { script[i] }, transcript, new[] { d with { Row = 0 } });
                 decisions[i] = d; RefreshRows(i); UpdateSummary(); return Task.CompletedTask;
             });
-            ActionButton(panel, "דלג במפורש על שורת התסריט הנבחרת", () =>
+            approveRow.Name = "ScriptReviewApproveRow";
+            skipRow = ActionButton(actions, "דלג במפורש על שורת התסריט הנבחרת", () =>
             {
                 if (busy || rows.SelectedIndex < 0 || rows.SelectedIndex >= script.Length) return Task.CompletedTask;
                 var i = rows.SelectedIndex; decisions[i] = new ScriptTranscriptReview.Decision(i, -1, -1, ScriptTranscriptReview.TextChoice.Script, true);
                 RefreshRows(i); UpdateSummary(); return Task.CompletedTask;
             });
-            panel.Children.Add(summary); panel.Children.Add(omissions);
-            panel.Children.Add(Label("שמור תסריט משתמש בזמני הקטע שבתמלול, גם כשהניסוח שונה. אין כאן יישור מדויק לכל מילה. בייבוא ייכללו רק הבחירות שאישרת; דיבור שלא שויך לא מתווסף מעצמו."));
-            ActionButton(panel, "בדקתי מול השמע — ייבא בחירות למסמך חדש", () =>
+            skipRow.Name = "ScriptReviewSkipRow";
+            ActionButton(review, "עבור לסיכום ולייבוא…", () => { stages.SelectedIndex = 2; return Task.CompletedTask; });
+            final.Children.Add(Label("בדוק את ההחלטות והדיבור שלא שויך. הייבוא זמין רק אחרי החלטה לכל שורה ואישור הסיכום."));
+            final.Children.Add(summary); final.Children.Add(omissions);
+            final.Children.Add(Label("שמור תסריט משתמש בזמני הקטע שבתמלול, גם כשהניסוח שונה. אין כאן יישור מדויק לכל מילה. בייבוא ייכללו רק הבחירות שאישרת; דיבור שלא שויך לא מתווסף מעצמו."));
+            import = ActionButton(actions, "בדקתי מול השמע — ייבא בחירות למסמך חדש", () =>
             {
                 if (busy) return Task.CompletedTask;
                 if (omissions.IsChecked != true) throw new InvalidDataException("בדוק את סיכום השורות ודיבור שלא שויך ואשר אותו.");
                 approved = ScriptTranscriptReview.Build(script, transcript, decisions.Values.ToList()); dialog.Close(); return Task.CompletedTask;
             });
+            import.Name = "ScriptReviewImport"; UpdateActions();
         });
         if (approved == null || Window == null) return;
         if (document != _subtitleFileName || generation != _ostDocumentGeneration || hash != GetFastHash()) { ShowStatus("המסמך השתנה. התוצאה לא יובאה; פתח שוב את ההשוואה.", 8000); return; }

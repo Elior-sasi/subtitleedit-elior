@@ -88,4 +88,62 @@ public partial class OstTableTests
         }
         finally { FeedbackSet((MainViewModel)main.DataContext!, "_subtitleFileName", ""); FeedbackSet((MainViewModel)main.DataContext!, "_customDocument", ""); foreach (var w in owner.OwnedWindows.ToArray()) w.Close(); owner.Close(); }
     }
+    [AvaloniaFact]
+    public async Task ScriptAndEpisodeDialogsKeepActionsVisibleAcrossStagesAndCancelWithoutEdits()
+    {
+        var services = new ServiceCollection(); services.AddSubtitleEditServices(); Locator.Services = services.BuildServiceProvider();
+        var owner = new Window { Width = 1500, Height = 900 }; MainView.NextHostWindow = owner; var main = new MainView(); owner.Content = main;
+        try
+        {
+            owner.Show(); Dispatcher.UIThread.RunJobs(); var vm = (MainViewModel)main.DataContext!; owner.SuppressSaveChangesPromptOnClose(vm); vm.StopBackgroundWork();
+            var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".srt"); FeedbackSet(vm, "_subtitleFileName", path); FeedbackSet(vm, "_customDocument", path); FeedbackSet(vm, "_customGeneration", Field<int>(vm, "_ostDocumentGeneration"));
+            var profile = new ProjectProfile { Name = "בדיקת חלונות", PreviousEpisodes = new() { new() { Name = "Show.S01E01.he.srt", Text = "חומר רקע לבדיקה", CueCount = 1, IncludeInAi = true } } };
+            Field<List<ProjectProfile>>(vm, "_customProfiles").Add(profile); Field<ProjectWork>(vm, "_customWork").ProfileId = profile.Id;
+            vm.Subtitles.Clear(); vm.Subtitles.Add(new SubtitleLineViewModel { Number = 1, Text = "הטקסט המקורי", StartTime = TimeSpan.FromSeconds(1), EndTime = TimeSpan.FromSeconds(3) });
+            var hash = vm.GetFastHash(); var original = JsonSerializer.Serialize(profile);
+            foreach (var method in new[] { "OpenScriptToSubtitles", "OpenScriptTranscriptReview", "OpenEpisodeContext" })
+            {
+                var args = method == "OpenScriptTranscriptReview" ? new object[] { "תסריט לבדיקה בלבד", "" } : null;
+                var task = (Task)typeof(MainViewModel).GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(vm, args)!; await FeedbackDrain();
+                var dialog = Assert.Single(owner.OwnedWindows, w => w.Name is "ScriptImportDialog" or "ScriptReviewDialog" or "PreviousEpisodesDialog");
+                foreach (var (width, height) in new[] { (780, 680), (620, 480) })
+                { dialog.Width = width; dialog.Height = height; await FeedbackDrain(); CheckCompactFooter(dialog, method + "-" + width); }
+                if (method == "OpenScriptToSubtitles")
+                {
+                    var options = Assert.Single(dialog.GetVisualDescendants().OfType<Expander>(), e => e.Name == "ScriptImportOptions"); Assert.False(options.IsExpanded);
+                    var routes = Assert.Single(dialog.GetVisualDescendants().OfType<ComboBox>(), c => c.Name == "ScriptTimingRoute"); Assert.Equal(3, routes.Items.Count); Assert.Equal(0, routes.SelectedIndex);
+                    for (var i = 0; i < 3; i++) { routes.SelectedIndex = i; await FeedbackDrain(); CheckCompactFooter(dialog, "ScriptRoute-" + i); }
+                    options.IsExpanded = true; await FeedbackDrain();
+                    Assert.Contains(dialog.GetVisualDescendants().OfType<Button>(), b => b.Content as string == "התקן / בחר מנוע ומודל תזמון…");
+                    options.IsExpanded = false;
+                    var next = Assert.Single(dialog.GetVisualDescendants().OfType<Button>(), b => b.Name == "ScriptImportContinue"); next.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await FeedbackDrain();
+                    Assert.Contains(dialog.GetVisualDescendants().OfType<TextBlock>(), t => t.Name == "CustomActionError" && t.Text!.Contains("בחר קובץ שמע"));
+                    Assert.False(task.IsCompleted); // Missing media cannot enter any engine or replace the document.
+                }
+                if (method == "OpenScriptTranscriptReview")
+                {
+                    var stages = Assert.Single(dialog.GetVisualDescendants().OfType<TabControl>(), t => t.Name == "ScriptReviewStages"); Assert.Equal(3, stages.Items.Count);
+                    for (var i = 0; i < 3; i++) { stages.SelectedIndex = i; await FeedbackDrain(); CheckCompactFooter(dialog, "ScriptReviewStage-" + i); }
+                    var import = Assert.Single(dialog.GetVisualDescendants().OfType<Button>(), b => b.Name == "ScriptReviewImport"); Assert.False(import.IsEnabled);
+                    Assert.Single(dialog.GetVisualDescendants().OfType<CheckBox>()).IsChecked = true; await FeedbackDrain(); Assert.False(import.IsEnabled);
+                    stages.SelectedIndex = 1; await FeedbackDrain(); Assert.False(Assert.Single(dialog.GetVisualDescendants().OfType<Button>(), b => b.Name == "ScriptReviewApproveRow").IsEnabled);
+                    stages.SelectedIndex = 0; await FeedbackDrain();
+                    Assert.Single(dialog.GetVisualDescendants().OfType<TextBox>(), t => t.Name == "ScriptReviewText").Text = "תסריט ערוך זמני";
+                }
+                if (method == "OpenEpisodeContext")
+                {
+                    var discovery = Assert.Single(dialog.GetVisualDescendants().OfType<Expander>(), e => e.Name == "EpisodeDiscoverySection"); Assert.False(discovery.IsExpanded);
+                    Assert.Single(dialog.GetVisualDescendants().OfType<CheckBox>()).IsChecked = false; await FeedbackDrain();
+                    Assert.Contains(dialog.GetVisualDescendants().OfType<TextBlock>(), t => t.Text?.Contains("0 מסומנים להקשר") == true);
+                    discovery.IsExpanded = true; await FeedbackDrain(); CheckCompactFooter(dialog, "PreviousEpisodesDiscovery-620");
+                    Assert.Contains(dialog.GetVisualDescendants().OfType<Button>(), b => b.Content as string == "צרף לטיוטת הרקע רק את המועמדים שסימנתי");
+                }
+                Assert.Equal(hash, vm.GetFastHash()); Assert.Equal(original, JsonSerializer.Serialize(profile));
+                Assert.Single(dialog.GetVisualDescendants().OfType<Button>(), b => b.Name == "CustomDialogClose").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await task;
+                Assert.Equal(hash, vm.GetFastHash()); Assert.Equal(original, JsonSerializer.Serialize(profile));
+            }
+            Assert.False(File.Exists(Path.ChangeExtension(path, ".sework.json")));
+        }
+        finally { FeedbackSet((MainViewModel)main.DataContext!, "_subtitleFileName", ""); FeedbackSet((MainViewModel)main.DataContext!, "_customDocument", ""); foreach (var w in owner.OwnedWindows.ToArray()) w.Close(); owner.Close(); }
+    }
 }

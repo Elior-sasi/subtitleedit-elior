@@ -108,7 +108,9 @@ public partial class OstTableTests
             var row = new SubtitleLineViewModel { Number = 1, Text = "current original", StartTime = TimeSpan.FromSeconds(1), EndTime = TimeSpan.FromSeconds(3) }; vm.Subtitles.Clear(); vm.Subtitles.Add(row); var hash = vm.GetFastHash();
             EpisodeContextDiscovery.SaveFolder(preferences, profile.Id, root);
             var task = (Task)typeof(MainViewModel).GetMethod("OpenEpisodeContext", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(vm, null)!; await FeedbackDrain();
-            var dialog = Assert.Single(owner.OwnedWindows, w => w.Name == "PreviousEpisodesDialog"); await WaitForDiscovery(dialog, "נמצאו 1");
+            var dialog = Assert.Single(owner.OwnedWindows, w => w.Name == "PreviousEpisodesDialog");
+            Assert.Single(dialog.GetVisualDescendants().OfType<Expander>(), e => e.Name == "EpisodeDiscoverySection").IsExpanded = true;
+            await WaitForDiscovery(dialog, "נמצאו 1");
             var check = Assert.Single(dialog.GetVisualDescendants().OfType<CheckBox>(), c => c.Name == "EpisodeDiscoveryCandidate"); Assert.False(check.IsChecked);
             Assert.Empty(profile.PreviousEpisodes); Assert.Empty(profile.Memory); Assert.Equal("[]", ProjectEpisodeContext.PromptContext(profile, "prior"));
             check.IsChecked = true;

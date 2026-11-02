@@ -21,10 +21,14 @@ public partial class MainViewModel
         var document = _subtitleFileName; var generation = _ostDocumentGeneration; var hash = GetFastHash();
         await ProjectDialog("תסריט לכתוביות — הכנה ותזמון מקומי", (panel, dialog) =>
         {
+            dialog.Name = "ScriptImportDialog";
+            var actions = PinProjectActions(dialog);
             var closed = false; dialog.Closed += (_, _) => closed = true;
-            panel.Children.Add(Label("1. טען תסריט. 2. בחר שמע או וידאו באותה שפה. 3. בדוק את הטקסט והחלוקה. 4. הפעל תזמון בחלון הבא, בדוק את הזמנים ואשר ייבוא למסמך חדש."));
-            panel.Children.Add(Label("נדרש טקסט קרוב לנאמר. כותרות, הוראות בימוי ושמות דוברים אינם מזוהים בוודאות: הסר אותם כאן לפי הצורך. אין זיהוי קולות אוטומטי, ואין תרגום."));
-            var editor = Field("", true); editor.FlowDirection = FlowDirection.LeftToRight; editor.MinHeight = 180;
+            var options = new StackPanel { Spacing = 8 };
+            var optionsSection = DialogDetails(panel, "אפשרויות חלוקה ומנוע", options); optionsSection.Name = "ScriptImportOptions";
+            panel.Children.Add(Label("1. טען וערוך תסריט · 2. בחר מדיה ומסלול · 3. בדוק ואשר תזמון בחלון הבא."));
+            DialogDetails(options, "איזה תסריט מתאים?", Label("נדרש טקסט קרוב לנאמר. כותרות, הוראות בימוי ושמות דוברים אינם מזוהים בוודאות: הסר אותם כאן לפי הצורך. אין זיהוי קולות אוטומטי, ואין תרגום."));
+            var editor = Field("", true); editor.Name = "ScriptImportText"; editor.FlowDirection = FlowDirection.LeftToRight; editor.MinHeight = 180;
             var name = Label("לא נטען תסריט"); panel.Children.Add(name);
             ActionButton(panel, "טען תסריט Word / TXT / SRT / MD…", async () =>
             {
@@ -34,11 +38,11 @@ public partial class MainViewModel
                 editor.Text = text; name.Text = Path.GetFileName(path);
             });
             panel.Children.Add(Label("הטקסט לעבודה — ניתן לערוך, בלי לשנות את קובץ המקור")); panel.Children.Add(editor);
-            ActionButton(panel, "התסריט שונה מהדיבור? פתח השוואה לתמלול…", async () => { var text = editor.Text ?? ""; dialog.Close(); await OpenScriptTranscriptReview(text, media); });
+            ActionButton(options, "התסריט שונה מהדיבור? פתח השוואה לתמלול…", async () => { var text = editor.Text ?? ""; dialog.Close(); await OpenScriptTranscriptReview(text, media); });
             var remove = new CheckBox { Content = Label("הסר בתצוגה המקדימה שמות בתבנית Name: בתחילת שורה"), FontSize = 16, IsChecked = false };
-            panel.Children.Add(remove);
+            options.Children.Add(remove);
             var max = new NumericUpDown { Minimum = 20, Maximum = 100, Value = 42, FontSize = 16 };
-            panel.Children.Add(Label("תווים בשורה — עד שתי שורות בכתובית. מילה ארוכה מהמגבלה תישאר שלמה לבדיקה.")); panel.Children.Add(max);
+            options.Children.Add(Label("תווים בשורה — עד שתי שורות בכתובית. מילה ארוכה מהמגבלה תישאר שלמה לבדיקה.")); options.Children.Add(max);
             var preview = Field("", true); preview.IsReadOnly = true; preview.FlowDirection = FlowDirection.LeftToRight;
             var hebrewWarning = Label(""); hebrewWarning.IsVisible = false;
             void Refresh()
@@ -48,7 +52,9 @@ public partial class MainViewModel
                 hebrewWarning.IsVisible = ImportPlainTextViewModel.LooksHebrew(preview.Text ?? "");
                 hebrewWarning.Text = hebrewWarning.IsVisible ? "⚠ התסריט בעברית. למנועי היישור הזמינים כאן (CrispASR מקומי ו־MFA בענן) אין כרגע מודל לעברית, ולכן הזמנים עלולים להיות שגויים. לתסריט עברי מול דיבור עברי מומלץ \"תסריט שונה מהדיבור - השוואה\"." : "";
             }
-            ActionButton(panel, "הצג חלוקה לפני תזמון", () => { Refresh(); return Task.CompletedTask; }); panel.Children.Add(preview);
+            var previewPanel = new StackPanel { Spacing = 8 };
+            var previewSection = DialogDetails(panel, "בדוק את החלוקה לכתוביות", previewPanel); previewSection.Name = "ScriptImportPreview";
+            ActionButton(previewPanel, "הצג חלוקה לפני תזמון", () => { Refresh(); return Task.CompletedTask; }); previewPanel.Children.Add(preview);
             Avalonia.Automation.AutomationProperties.SetName(hebrewWarning, "אזהרה: אין מודל יישור לעברית"); panel.Children.Add(hebrewWarning);
             var mediaName = Label("שמע / וידאו: " + (File.Exists(media) ? media : "טרם נבחר")); panel.Children.Add(mediaName);
             ActionButton(panel, "בחר שמע או וידאו…", async () =>
@@ -56,31 +62,21 @@ public partial class MainViewModel
                 var files = await dialog.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions { Title = "בחר קובץ שמע או וידאו", AllowMultiple = false, FileTypeFilter = new[] { new FilePickerFileType("שמע או וידאו") { Patterns = new[] { "*.wav", "*.mp3", "*.m4a", "*.flac", "*.mp4", "*.mkv", "*.mov", "*.avi", "*.webm" } } } });
                 var picked = files.FirstOrDefault()?.TryGetLocalPath(); if (picked != null) { media = picked; mediaName.Text = "שמע / וידאו: " + media; }
             });
-            panel.Children.Add(Label("המנוע: CrispASR מקומי, עם מודל תזמון לשפה שבחרת. התקנה ראשונה מורידה רכיבים; התסריט והשמע אינם מועלים לענן. Nyra אינו כלול; MFA זמין במסלול מקומי נפרד ובמסלול הענן שלמטה."));
-            ActionButton(panel, "התקן / בחר מנוע ומודל תזמון…", async () => { await _windowService.ShowDialogAsync<ForcedAlignerSetupWindow, ForcedAlignerSetupViewModel>(dialog, vm => { vm.CustomScriptSetup = true; vm.Initialize(); }); });
-            ActionButton(panel, "המשך לתצוגת התזמון — ללא שינוי המסמך כעת", async () =>
+            panel.Children.Add(Label("מסלול התזמון — אין שליחה או ייבוא לפני אישור"));
+            var route = new ComboBox { Name = "ScriptTimingRoute", FontSize = 16, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch,
+                ItemsSource = new[] { "CrispASR מקומי — לפי מודל השפה", "MFA מקומי — אנגלית בלבד", "MFA בענן — שירות שהגדרת" }, SelectedIndex = 0 };
+            Avalonia.Automation.AutomationProperties.SetName(route, "מסלול תזמון"); panel.Children.Add(route);
+            DialogDetails(options, "מה ההבדל בין המסלולים?", Label("CrispASR מקומי דורש מנוע ומודל לשפה; התקנה ראשונה מורידה רכיבים, ללא העלאת התסריט והשמע לענן. MFA מקומי דורש התקנה נפרדת ותומך כאן באנגלית. במסלול הענן יוצגו השירות והחומר לשליחה לאישורך בחלון הבא. Nyra אינו כלול."));
+            ActionButton(options, "התקן / בחר מנוע ומודל תזמון…", async () => { await _windowService.ShowDialogAsync<ForcedAlignerSetupWindow, ForcedAlignerSetupViewModel>(dialog, vm => { vm.CustomScriptSetup = true; vm.Initialize(); }); });
+            panel.Children.Remove(optionsSection); panel.Children.Add(optionsSection);
+            var next = ActionButton(actions, "המשך לבדיקת התזמון…", async () =>
             {
                 if (!File.Exists(media)) throw new InvalidDataException("בחר קובץ שמע או וידאו קיים.");
                 Refresh();
                 if (!await RequireFfmpegOk()) return;
-                prepared = preview.Text; dialog.Close();
-            });
-            ActionButton(panel, "יישור מקומי עם MFA — אנגלית…", async () =>
-            {
-                if (!File.Exists(media)) throw new InvalidDataException("בחר קובץ שמע או וידאו קיים.");
-                Refresh();
-                if (!await RequireFfmpegOk()) return;
-                LocalMfa.Request(CloudMfaImport.CuesFromPrepared(preview.Text ?? ""));
-                prepared = preview.Text; localMfa = true; dialog.Close();
-            });
-            panel.Children.Add(Label("אפשרות נוספת: יישור בענן עם Montreal Forced Aligner, בשירות שהקמת. בחלון הבא תראה מה יישלח ולאן, ושום דבר לא יישלח לפני אישורך."));
-            ActionButton(panel, "יישור בענן עם MFA… - ללא שינוי המסמך כעת", async () =>
-            {
-                if (!File.Exists(media)) throw new InvalidDataException("בחר קובץ שמע או וידאו קיים.");
-                Refresh();
-                if (!await RequireFfmpegOk()) return;
-                prepared = preview.Text; cloud = true; dialog.Close();
-            });
+                if (route.SelectedIndex == 1) LocalMfa.Request(CloudMfaImport.CuesFromPrepared(preview.Text ?? ""));
+                prepared = preview.Text; localMfa = route.SelectedIndex == 1; cloud = route.SelectedIndex == 2; dialog.Close();
+            }); next.Name = "ScriptImportContinue";
         });
         if (prepared == null || Window == null) return;
         if (generation != _ostDocumentGeneration || document != _subtitleFileName || hash != GetFastHash()) { ShowStatus("המסמך השתנה. פתח שוב את כלי התסריט.", 7000); return; }

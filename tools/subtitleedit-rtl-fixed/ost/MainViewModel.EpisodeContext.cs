@@ -44,10 +44,13 @@ public partial class MainViewModel
         await ProjectDialog("פרקים קודמים — חומר רקע", (panel, window) =>
         {
             window.Name = "PreviousEpisodesDialog";
+            var actions = PinProjectActions(window);
             var cancel = new CancellationTokenSource(); window.Closed += (_, _) => cancel.Cancel();
-            panel.Children.Add(Label("פרויקט: " + profile.Name + ". צרף כתוביות SRT בעברית או באנגלית. פרקי הרקע נשמרים מקומית בפרויקט. בפעולת Gemini שתפעיל יצורפו קטעים רלוונטיים מפרקים שסימנת, לא הפרקים המלאים. צירוף פרק אינו מאשר תרגומים למילון או לזיכרון התרגום."));
+            panel.Children.Add(Label("פרויקט: " + profile.Name + ". בחר פרקי SRT, סמן מה ייכלל ושמור."));
+            DialogDetails(panel, "איך פרקי הרקע משמשים בתרגום?", Label("פרקי הרקע נשמרים מקומית בפרויקט. רק בפעולת Gemini שתפעיל יצורפו קטעים רלוונטיים מפרקים שסימנת, לא הפרקים המלאים. צירוף פרק אינו מאשר תרגומים למילון או לזיכרון התרגום, ואינו משנה את קובצי המקור."));
             var list = new StackPanel { Spacing = 8 }; panel.Children.Add(list);
             var status = Label(""); panel.Children.Add(status);
+            void UpdateCount() => status.Text = $"{draft.Count} פרקים; {draft.Count(e => e.IncludeInAi)} מסומנים להקשר. השינויים יישמרו רק בלחיצה על שמור.";
             void Refresh()
             {
                 list.Children.Clear();
@@ -55,7 +58,7 @@ public partial class MainViewModel
                 {
                     var include = new CheckBox { Content = Label(episode.Name + $" — {episode.CueCount} כתוביות"), IsChecked = episode.IncludeInAi };
                     AutomationProperties.SetName(include, "כלול בהקשר AI: " + episode.Name);
-                    include.IsCheckedChanged += (_, _) => episode.IncludeInAi = include.IsChecked == true;
+                    include.IsCheckedChanged += (_, _) => { episode.IncludeInAi = include.IsChecked == true; UpdateCount(); };
                     list.Children.Add(include);
                     ActionButton(list, "עיין בפרק: " + episode.Name, () => ProjectDialog("תצוגת פרק רקע — " + episode.Name, (p, _) =>
                     {
@@ -63,11 +66,13 @@ public partial class MainViewModel
                     }));
                     ActionButton(list, "הסר מהרקע: " + episode.Name, () => { draft.Remove(episode); Refresh(); return Task.CompletedTask; });
                 }
-                status.Text = $"{draft.Count} פרקים; {draft.Count(e => e.IncludeInAi)} מסומנים להקשר. השינויים יישמרו רק בלחיצה על שמור.";
+                UpdateCount();
             }
-            var discovery = AttachEpisodeDiscoveryUi(panel, window, profile, () => draft, next => { draft = next; Refresh(); },
+            var discoveryPanel = new StackPanel { Spacing = 8 };
+            var discoverySection = DialogDetails(panel, "אתר פרקים בתיקיית הסדרה…", discoveryPanel); discoverySection.Name = "EpisodeDiscoverySection";
+            var discovery = AttachEpisodeDiscoveryUi(discoveryPanel, window, profile, () => draft, next => { draft = next; Refresh(); },
                 () => document == _subtitleFileName && generation == _ostDocumentGeneration && documentHash == GetFastHash() && ActiveProfile?.Id == profile.Id && ProjectEpisodeContext.Fingerprint(profile) == originalContext, cancel.Token);
-            ActionButton(panel, "בחר קובצי פרקים קודמים…", async () =>
+            var chooseFiles = ActionButton(panel, "בחר קובצי פרקים קודמים…", async () =>
             {
                 var files = await window.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
                 {
@@ -82,7 +87,11 @@ public partial class MainViewModel
                     throw new InvalidOperationException("המסמך או הפרויקט השתנו; הפרקים לא צורפו.");
                 draft = ProjectEpisodeContext.Merge(draft, imported); Refresh();
             });
-            ActionButton(panel, "הצג קטעי רקע לדוגמה מהבחירה הנוכחית", async () =>
+            panel.Children.Remove(chooseFiles); panel.Children.Insert(1, chooseFiles);
+            panel.Children.Remove(discoverySection); panel.Children.Add(discoverySection);
+            var previewPanel = new StackPanel { Spacing = 8 };
+            DialogDetails(panel, "בדוק אילו קטעים עשויים להישלח", previewPanel);
+            ActionButton(previewPanel, "הצג קטעי רקע לדוגמה מהבחירה הנוכחית", async () =>
             {
                 var preview = new ProjectProfile { PreviousEpisodes = JsonSerializer.Deserialize<List<EpisodeContextDocument>>(JsonSerializer.Serialize(draft))! };
                 var query = string.Join("\n", SubtitleGridSelectedItems.Select(r => r.Text));
@@ -93,13 +102,14 @@ public partial class MainViewModel
                     var text = Field(content, true); text.IsReadOnly = true; text.Height = 400; p.Children.Add(text);
                 });
             });
-            ActionButton(panel, "שמור פרקי רקע בפרויקט", () =>
+            var save = ActionButton(actions, "שמור פרקי רקע בפרויקט", () =>
             {
                 if (discovery.Busy) throw new InvalidOperationException("המתן לסיום הסריקה או בטל אותה לפני השמירה.");
                 if (document != _subtitleFileName || generation != _ostDocumentGeneration || documentHash != GetFastHash()) throw new InvalidOperationException("המסמך השתנה; פתח את החלון מחדש.");
                 if (ProjectEpisodeContext.Fingerprint(profile) != originalContext) throw new InvalidOperationException("פרקי הרקע השתנו בחלון אחר; פתח מחדש כדי לא לדרוס שינוי חדש.");
                 SaveEpisodeContext(profile, draft); window.Close(); return Task.CompletedTask;
             });
+            save.Name = "PreviousEpisodesSave";
             Refresh();
         });
     }
