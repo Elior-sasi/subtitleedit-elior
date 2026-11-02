@@ -237,6 +237,9 @@ public partial class OstTableTests
                         }
                         Assert.True(max > Math.Min(width, 504) - 110, $"RTL caption did not reach the visible right edge: {skia}/{bottom}/{width}: {min}..{max}");
                         Assert.True(min >= 4 && max < Math.Min(width, 504) - 3);
+                        var expectedRight = WaveformRtlMarker.Layout(0, 504, width, av.GetCachedParagraphText("RTL").Width,
+                            true, bottom, true, 180, 80).Right;
+                        Assert.True(max >= expectedRight - 10, $"Excessive right caption gap: {skia}/{bottom}/{width}: {max} vs {expectedRight}");
                         Assert.True(av.GetPreparedParagraphText(original).RightToLeft);
                         Assert.Equal(FlowDirection.RightToLeft, av.GetCachedParagraphText(av.GetPreparedParagraphText(original).Unwrapped, true).FlowDirection);
                         var runs = SkiaBidiRuns.Split("נפגשים עם Naruto ב־12:30.", true);

@@ -79,6 +79,29 @@ patch(target / 'SkiaAudioVisualizer.cs', [
 ])
 
 patch(target / 'SkiaWaveformRenderer.cs', [
+    ('        public float Width;\n        public float Baseline;', '        public float Width;\n        public float InkLeft;\n        public float InkRight;\n        public float Baseline;'),
+    ('\n        AppendRun(builder, font, result);', '\n        AppendRun(builder, font, result, shaped);'),
+    ('\n                AppendRun(builder, font, result);', '\n                AppendRun(builder, font, result, shaped);'),
+    ('private static void AppendRun(SKTextBlobBuilder builder, SKFont font, SKShaper.Result result)',
+     'private static void AppendRun(SKTextBlobBuilder builder, SKFont font, SKShaper.Result result, ShapedText shaped)'),
+    ('''            positions[i] = result.Points[i];
+        }
+    }
+''', '''            positions[i] = result.Points[i];
+        }
+        // SKTextBlob.Bounds uses conservative font-wide bounds, which can leave a large gap.
+        // Measure each shaped glyph once in the cache, using its actual run position and font.
+        Span<SKRect> bounds = count <= 256 ? stackalloc SKRect[count] : new SKRect[count];
+        font.GetGlyphWidths(glyphs, Span<float>.Empty, bounds);
+        for (var i = 0; i < count; i++)
+        {
+            if (bounds[i].IsEmpty) continue;
+            shaped.InkLeft = Math.Min(shaped.InkLeft, positions[i].X + bounds[i].Left);
+            shaped.InkRight = Math.Max(shaped.InkRight, positions[i].X + bounds[i].Right);
+        }
+    }
+'''),
+
     ('''            canvas.Save();
             canvas.ClipRect(SKRect.Create(left + 1, 0, width - 3, f.WorkingTextHeight));
             DrawParagraphText(canvas, f, p, left + 3, TimeLineTextOffset, 255);''', '''            var marker = p.HasRtlControls ? _textCache.Get("RTL", f.FontSize) : null;
@@ -100,7 +123,7 @@ patch(target / 'SkiaWaveformRenderer.cs', [
     ('private void DrawParagraphTextLines(SKCanvas canvas, SkiaWaveformFrame f, SkiaParagraph p, float x, float y, byte alpha)',
      'private void DrawParagraphTextLines(SKCanvas canvas, SkiaWaveformFrame f, SkiaParagraph p, float x, float y, byte alpha, float? rightEdge = null)'),
     ('        var color = f.TextColor.WithAlpha((byte)(f.TextColor.Alpha * alpha / 255));',
-     '        var color = f.TextColor.WithAlpha((byte)(f.TextColor.Alpha * alpha / 255));\n        float Origin(SkiaTextCache.ShapedText value) => rightEdge.HasValue ? (float)WaveformRtlMarker.InkOrigin(x, rightEdge.Value, value.Width, p.RightToLeft, value.Blob?.Bounds.Left ?? 0, value.Blob?.Bounds.Right ?? value.Width) : x;'),
+     '        var color = f.TextColor.WithAlpha((byte)(f.TextColor.Alpha * alpha / 255));\n        float Origin(SkiaTextCache.ShapedText value) => rightEdge.HasValue ? (float)WaveformRtlMarker.InkOrigin(x, rightEdge.Value, value.Width, p.RightToLeft, value.InkLeft, value.InkRight) : x;'),
     ('            DrawText(canvas, _textCache.Get(p.Unwrapped, f.FontSize, p.RightToLeft), x, y, color);',
      '            var unwrapped = _textCache.Get(p.Unwrapped, f.FontSize, p.RightToLeft);\n            DrawText(canvas, unwrapped, Origin(unwrapped), y, color);'),
     ('            DrawText(canvas, text, x, y, color);', '            DrawText(canvas, text, Origin(text), y, color);'),
