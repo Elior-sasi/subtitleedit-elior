@@ -1,0 +1,52 @@
+name: Diagnose reported waveform glyph clipping
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/waveform-clipping-probe.yml'
+      - 'diagnostics/WaveformClippingProbe.cs'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: waveform-clipping-probe
+  cancel-in-progress: true
+jobs:
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: custom
+      - uses: actions/checkout@v5
+        with:
+          repository: SubtitleEdit/subtitleedit
+          ref: v5.4.0-rc2
+          path: subtitleedit
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Apply current custom integrations without publishing
+        shell: pwsh
+        working-directory: subtitleedit
+        run: |
+          ../custom/tools/subtitleedit-rtl-fixed/apply-hebrew-breaks.ps1
+          ../custom/tools/subtitleedit-rtl-fixed/ost/apply-ost.ps1
+          ../custom/tools/subtitleedit-rtl-fixed/ost/apply-script-import.ps1
+          ../custom/tools/subtitleedit-rtl-fixed/ost/apply-custom-updates.ps1
+          ../custom/tools/subtitleedit-rtl-fixed/ost/apply-player-diagnostics.ps1
+          Copy-Item ../custom/diagnostics/WaveformClippingProbe.cs tests/UI/Features/Main/WaveformClippingProbe.cs
+      - name: Compare actual caption painters with unclipped references on Windows
+        shell: pwsh
+        working-directory: subtitleedit
+        run: |
+          dotnet test tests/UI/UITests.csproj -c Release --filter FullyQualifiedName~WaveformReportedClippingWindowsProbe --logger 'console;verbosity=normal'
+          if ($LASTEXITCODE -ne 0) { throw 'Waveform probe failed; no software package is published by this workflow.' }
+      - name: Upload synthetic waveform screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Waveform-Reported-Clipping-Probe
+          path: waveform-rtl-smoke/*
+          if-no-files-found: warn
