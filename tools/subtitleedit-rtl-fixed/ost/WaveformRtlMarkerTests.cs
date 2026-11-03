@@ -271,7 +271,7 @@ public partial class OstTableTests
     {
         var oldSettings = JsonSerializer.Serialize(Se.Settings.Waveform);
         var probe = new WaveformGlyphProbe();
-        var window = new Window { Width = 450, Height = 130, Content = probe };
+        var window = new Window { Width = 850, Height = 130, Content = probe };
         var classicMethod = typeof(AudioVisualizer).GetMethod("DrawParagraphText", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var skiaMethod = typeof(SkiaWaveformRenderer).GetMethod("DrawParagraphTextLines", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var renderer = new SkiaWaveformRenderer();
@@ -300,7 +300,10 @@ public partial class OstTableTests
                 // Exercise several native font metrics without altering the user's configured font.
                 typeof(AudioVisualizer).GetField("_typeface", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(av, new Typeface(font));
                 var prepared = av.GetPreparedParagraphText(raw);
-                foreach (var right in new[] { 410.0, 410.25, 410.75 })
+                // A long unwrapped cue may intentionally overflow its left clip. Keep the
+                // original edge fixtures, and give that case room so equality tests glyph loss.
+                foreach (var right in (unwrap && raw.Contains("\u202C")
+                    ? new[] { 810.0, 810.25, 810.75 } : new[] { 410.0, 410.25, 410.75 }))
                 {
                     var clip = new Rect(10, 0, right - 10, 130);
                     void Classic(DrawingContext context) => classicMethod.Invoke(av, new object?[] { context, raw, 10d, 14d, right });
@@ -319,7 +322,7 @@ public partial class OstTableTests
                     var p = new SkiaParagraph { Lines = prepared.Lines, Unwrapped = prepared.Unwrapped, RightToLeft = prepared.RightToLeft };
                     byte[] Skia(bool useClip)
                     {
-                        using var bitmap = new SkiaSharp.SKBitmap(450, 130);
+                        using var bitmap = new SkiaSharp.SKBitmap(850, 130);
                         using var canvas = new SkiaSharp.SKCanvas(bitmap); canvas.Clear(SkiaSharp.SKColors.Black);
                         if (useClip) canvas.ClipRect(new SkiaSharp.SKRect(10, 0, (float)right, 130));
                         skiaMethod.Invoke(renderer, new object?[] { canvas, f, p, 10f, 14f, (byte)255, (float)right });

@@ -58,12 +58,13 @@ public partial class OstTableTests
         {
             window.Show(); window.UpdateLayout();
             foreach (var font in new[] { "Arial", "Segoe UI", "Tahoma", "David" })
-            foreach (var size in new[] { 14, 15, 16, 18 })
+            foreach (var size in new[] { 14, 15, 16, 18, 26 })
             foreach (var bold in new[] { false, true })
+            foreach (var unwrap in new[] { false, true })
             foreach (var raw in new[] { "תחזיקו חזק,\nאני באה במהירות הבזק!", "\u200Fתחזיקו חזק,\n\u200Fאני באה במהירות הבזק!", "\u202Bתחזיקו חזק,\nאני באה במהירות הבזק!\u202C", exactReportedCue })
             {
                 Se.Settings.Waveform.WaveformTextFontSize = size;
-                Se.Settings.Waveform.WaveformUnwrapText = false;
+                Se.Settings.Waveform.WaveformUnwrapText = unwrap;
                 var av = new AudioVisualizer();
                 typeof(AudioVisualizer).GetField("_typeface", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(av, new Typeface(font, FontStyle.Normal, bold ? FontWeight.Bold : FontWeight.Normal));
                 var prepared = av.GetPreparedParagraphText(raw);
@@ -81,10 +82,10 @@ public partial class OstTableTests
                     var full = Capture(c => Paint(c, false)); var clipped = Capture(c => Paint(c, true));
                     if (!RightEdgeEqual(full, clipped, 900, 280, right, scale))
                     {
-                        errors.Add($"Classic {font}/{size}/{bold}/{scale}/{right}/{raw}");
+                        errors.Add($"Classic {font}/{size}/{bold}/{unwrap}/{scale}/{right}/{raw}");
                         if (errors.Count <= 8) SaveWaveformFixture(window, $"Reported-Clipping-Classic-{errors.Count}");
                     }
-                    var frame = new SkiaWaveformFrame { FontSize = size, Height = 130, TextColor = SkiaSharp.SKColors.White };
+                    var frame = new SkiaWaveformFrame { FontSize = size, UnwrapText = unwrap, Height = 130, TextColor = SkiaSharp.SKColors.White };
                     var paragraph = new SkiaParagraph { Lines = prepared.Lines, Unwrapped = prepared.Unwrapped, RightToLeft = prepared.RightToLeft };
                     byte[] Skia(bool clip)
                     {
@@ -94,7 +95,7 @@ public partial class OstTableTests
                         skiaMethod.Invoke(renderer, new object?[] { canvas, frame, paragraph, 10f, 14f, (byte)255, (float)right });
                         canvas.Flush(); return bitmap.Bytes;
                     }
-                    if (!RightEdgeEqual(Skia(false), Skia(true), 900, 280, right, scale)) errors.Add($"Skia {font}/{size}/{bold}/{scale}/{right}/{raw}");
+                    if (!RightEdgeEqual(Skia(false), Skia(true), 900, 280, right, scale)) errors.Add($"Skia {font}/{size}/{bold}/{unwrap}/{scale}/{right}/{raw}");
                 }
             }
             Console.WriteLine($"WINDOWS_EDGE_CASES={cases}; LOSSES={errors.Count}");
