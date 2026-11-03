@@ -292,7 +292,7 @@ public partial class OstTableTests
             window.Show(); window.UpdateLayout();
             foreach (var font in new[] { "Arial", "Segoe UI", "Tahoma" })
             foreach (var size in new[] { 14, 18, 26 })
-            foreach (var raw in new[] { "תחזיקו חזק.", "תודה!", "ת\nאני רואה Naruto ב־12:30." })
+            foreach (var raw in new[] { "תחזיקו חזק.", "תודה!", "ת\nאני רואה Naruto ב־12:30.", "\u202Bתחזיקו חזק, \u202C\n\u202Bאני באה במהירות הבזק!\u202C" })
             foreach (var unwrap in new[] { false, true })
             {
                 Se.Settings.Waveform.WaveformTextFontSize = size; Se.Settings.Waveform.WaveformUnwrapText = unwrap;

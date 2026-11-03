@@ -25,6 +25,24 @@ patch('src/ui/Features/Options/Settings/SettingsPage.cs', [
 ])
 
 patch(target / 'AudioVisualizer.cs', [
+    ('    internal (List<string> Lines, string Unwrapped, bool RightToLeft) GetPreparedParagraphText(string rawText)', '''    private sealed class CustomWaveformInkBounds
+    {
+        public Rect Bounds;
+    }
+    // FormattedText overhangs are relative to TextLine.Start. Per-line embedding
+    // controls plus trailing spaces can offset actual ink beyond those metrics.
+    // Cache the actual drawn glyph geometry's bounds once per cached text object;
+    // weak keys follow native cache/font invalidation without retaining old text.
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<FormattedText, CustomWaveformInkBounds> _customWaveformInkBounds = new();
+    private Rect GetCustomWaveformInkBounds(FormattedText text)
+    {
+        return _customWaveformInkBounds.GetValue(text, static value => new CustomWaveformInkBounds
+        {
+            Bounds = value.BuildGeometry(default)?.Bounds ?? new Rect(0, 0, value.Width, value.Height)
+        }).Bounds;
+    }
+
+    internal (List<string> Lines, string Unwrapped, bool RightToLeft) GetPreparedParagraphText(string rawText)'''),
     ('        var textBounds = new Rect(currentRegionLeft + 1, contentTop, currentRegionWidth - 3, contentHeight);', '''        var prepared = GetPreparedParagraphText(text);
         var marker = WaveformRtlMarker.HasRtlControls(text) ? GetCachedParagraphText("RTL") : null;
         double captionWidth = 0;
@@ -47,7 +65,7 @@ patch(target / 'AudioVisualizer.cs', [
     ('    private void DrawParagraphText(DrawingContext context, string text, double x, double y)',
      '    private void DrawParagraphText(DrawingContext context, string text, double x, double y, double? rightEdge = null)'),
     ('        var prepared = GetPreparedParagraphText(text);\n        if (Se.Settings.Waveform.WaveformUnwrapText)',
-     '        var prepared = GetPreparedParagraphText(text);\n        double Origin(double width) => rightEdge.HasValue ? WaveformRtlMarker.TextOrigin(x, rightEdge.Value, width, prepared.RightToLeft) : x;\n        double InkOrigin(FormattedText value) => rightEdge.HasValue ? WaveformRtlMarker.InkOrigin(x, rightEdge.Value, value.Width, prepared.RightToLeft, value.OverhangLeading, value.Width - value.OverhangTrailing) : x;\n        if (Se.Settings.Waveform.WaveformUnwrapText)'),
+     '        var prepared = GetPreparedParagraphText(text);\n        double Origin(double width) => rightEdge.HasValue ? WaveformRtlMarker.TextOrigin(x, rightEdge.Value, width, prepared.RightToLeft) : x;\n        double InkOrigin(FormattedText value)\n        {\n            if (!rightEdge.HasValue) return x;\n            var ink = GetCustomWaveformInkBounds(value);\n            return WaveformRtlMarker.InkOrigin(x, rightEdge.Value, value.Width, prepared.RightToLeft, ink.Left, ink.Right);\n        }\n        if (Se.Settings.Waveform.WaveformUnwrapText)'),
     ('new Rect(x, y, unwrapped.Width, unwrapped.Height)', 'new Rect(Origin(unwrapped.Width), y, unwrapped.Width, unwrapped.Height)'),
     ('context.DrawText(unwrapped, new Point(x, y));', 'context.DrawText(unwrapped, new Point(InkOrigin(unwrapped), y));'),
     ('blur = context.PushEffect(TextBlurEffect, new Rect(x, y, width, height));', 'blur = context.PushEffect(TextBlurEffect, new Rect(Origin(width), y, width, height));'),

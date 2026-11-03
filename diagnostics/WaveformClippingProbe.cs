@@ -116,7 +116,7 @@ public partial class OstTableTests
                 vm.Subtitles.Clear(); var row = ProRow(14, 45.112, 47.107, exactReportedCue); vm.Subtitles.Add(row);
                 AudioVisualizer av = skia ? new SkiaAudioVisualizer() : new AudioVisualizer(); vm.AudioVisualizer = av;
                 av.ZoomFactor = 1.5; av.ShowParagraphText = true; av.ShowOriginalText = false;
-                av.WavePeaks = new WavePeakData2(126, Enumerable.Repeat(new WavePeak2(70, -70), 1260).ToArray());
+                av.WavePeaks = new WavePeakData2(126, Enumerable.Repeat(new WavePeak2(70, -70), 12600).ToArray());
                 var screenshot = new Window { Width = 398, Height = 128, Content = av };
                 try { screenshot.Show(); screenshot.UpdateLayout(); av.SetPosition(45.072, vm.Subtitles.ToList(), 0, -1, new()); SaveWaveformFixture(screenshot, $"Reported-ExactCue14-398x128-{(skia ? "Skia" : "Classic")}-{bold}"); }
                 finally { screenshot.Close(); }
