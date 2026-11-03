@@ -24,6 +24,9 @@ public partial class OstTableTests
     [AvaloniaFact]
     public void WaveformReportedClippingWindowsProbe()
     {
+        // Exact cue 14 supplied by the user: each line has its own RLE/PDF,
+        // including the ASCII space before the first line's PDF. Never normalize it.
+        const string exactReportedCue = "\u202Bתחזיקו חזק, \u202C\n\u202Bאני באה במהירות הבזק!\u202C";
         var originalSettings = JsonSerializer.Serialize(Se.Settings.Waveform);
         var probe = new WaveformGlyphProbe();
         var window = new Window { Width = 900, Height = 280, Content = probe };
@@ -57,7 +60,7 @@ public partial class OstTableTests
             foreach (var font in new[] { "Arial", "Segoe UI", "Tahoma", "David" })
             foreach (var size in new[] { 14, 15, 16, 18 })
             foreach (var bold in new[] { false, true })
-            foreach (var raw in new[] { "תחזיקו חזק,\nאני באה במהירות הבזק!", "\u200Fתחזיקו חזק,\n\u200Fאני באה במהירות הבזק!", "\u202Bתחזיקו חזק,\nאני באה במהירות הבזק!\u202C" })
+            foreach (var raw in new[] { "תחזיקו חזק,\nאני באה במהירות הבזק!", "\u200Fתחזיקו חזק,\n\u200Fאני באה במהירות הבזק!", "\u202Bתחזיקו חזק,\nאני באה במהירות הבזק!\u202C", exactReportedCue })
             {
                 Se.Settings.Waveform.WaveformTextFontSize = size;
                 Se.Settings.Waveform.WaveformUnwrapText = false;
@@ -110,12 +113,12 @@ public partial class OstTableTests
             foreach (var bold in new[] { false, true })
             {
                 Se.Settings.Waveform.WaveformTextFontBold = bold;
-                vm.Subtitles.Clear(); var row = ProRow(14, 0.04, 2.035, "\u202Bתחזיקו חזק,\nאני באה במהירות הבזק!\u202C"); vm.Subtitles.Add(row);
+                vm.Subtitles.Clear(); var row = ProRow(14, 45.112, 47.107, exactReportedCue); vm.Subtitles.Add(row);
                 AudioVisualizer av = skia ? new SkiaAudioVisualizer() : new AudioVisualizer(); vm.AudioVisualizer = av;
                 av.ZoomFactor = 1.5; av.ShowParagraphText = true; av.ShowOriginalText = false;
                 av.WavePeaks = new WavePeakData2(126, Enumerable.Repeat(new WavePeak2(70, -70), 1260).ToArray());
                 var screenshot = new Window { Width = 398, Height = 128, Content = av };
-                try { screenshot.Show(); screenshot.UpdateLayout(); av.SetPosition(0, vm.Subtitles.ToList(), 0, -1, new()); SaveWaveformFixture(screenshot, $"Reported-398x128-{(skia ? "Skia" : "Classic")}-{bold}"); }
+                try { screenshot.Show(); screenshot.UpdateLayout(); av.SetPosition(45.072, vm.Subtitles.ToList(), 0, -1, new()); SaveWaveformFixture(screenshot, $"Reported-ExactCue14-398x128-{(skia ? "Skia" : "Classic")}-{bold}"); }
                 finally { screenshot.Close(); }
             }
         }
