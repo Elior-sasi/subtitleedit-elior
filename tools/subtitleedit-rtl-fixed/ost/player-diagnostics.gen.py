@@ -303,12 +303,12 @@ e(C, "replace", """        internal async Task Open(string videoFileName, double
                 return;
             }}
 """)
-e(C, "replace", """            await _videoPlayerInstance.LoadFile(videoFileName, startPositionSeconds);
+e(C, "replace", """            await _videoPlayerInstance.LoadFile(videoFileName, UiToPlayerSeconds(startPositionSeconds));
 """, f"""            var diagLoadStart = {D}.Now;
             Interlocked.Increment(ref _diagOpensInFlight);
             try
             {{
-                await _videoPlayerInstance.LoadFile(videoFileName, startPositionSeconds);
+                await _videoPlayerInstance.LoadFile(videoFileName, UiToPlayerSeconds(startPositionSeconds));
             }}
             finally
             {{
