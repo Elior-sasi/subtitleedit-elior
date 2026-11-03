@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/waveform-clipping-probe.yml'
       - 'diagnostics/WaveformClippingProbe.cs'
+      - 'tools/subtitleedit-rtl-fixed/ost/apply-waveform-rtl-marker.py'
   workflow_dispatch:
 permissions:
   contents: read
