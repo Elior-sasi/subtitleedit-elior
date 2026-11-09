@@ -3,6 +3,9 @@ Copy-Item "$PSScriptRoot/PrivateReleaseTests.cs" 'tests/UI/Features/Main/Private
 Copy-Item "$PSScriptRoot/CustomUpdateChannel.cs" 'src/ui/Features/Help/CheckForUpdates/CustomUpdateChannel.cs' -Force
 Copy-Item "$PSScriptRoot/CustomUpdateInstaller.cs" 'src/ui/Features/Help/CheckForUpdates/CustomUpdateInstaller.cs' -Force
 
+Copy-Item "$PSScriptRoot/MainViewModel.CustomStartupUpdates.cs" 'src/ui/Features/Main/MainViewModel.CustomStartupUpdates.cs' -Force
+Copy-Item "$PSScriptRoot/StartupUpdateTests.cs" 'tests/UI/Features/Main/StartupUpdateTests.cs' -Force
+
 function Replace-Section([string]$text, [string]$start, [string]$end, [string]$replacement) {
     $text = $text.Replace("`r`n", "`n")
     $a = $text.IndexOf($start, [StringComparison]::Ordinal)
@@ -12,8 +15,7 @@ function Replace-Section([string]$text, [string]$start, [string]$end, [string]$r
     return $text.Substring(0, $a) + $replacement + "`n`n" + $text.Substring($b)
 }
 
-# Suppress upstream-only startup alerts; the private channel is opened with the
-# user's signed-in browser. An official installer must never overwrite our build.
+# Route every update check and download through the verified custom channel only.
 $path = 'src/ui/Features/Help/CheckForUpdates/UpdateCheckService.cs'
 $text = Get-Content $path -Raw
 $text = Replace-Section $text '    public async Task<UpdateCheckResult> CheckForUpdates()' "    /// <summary>`n    /// Downloads the changelog" @'
@@ -26,6 +28,12 @@ $text = Get-Content $path -Raw
 $old = '    private const string ReleasesUrl = "https://github.com/SubtitleEdit/subtitleedit/releases";'
 if (-not $text.Contains($old)) { throw 'Custom download URL anchor changed.' }
 $text = $text.Replace($old, '    private const string ReleasesUrl = CustomUpdateChannel.DownloadPage;')
+$text = $text.Replace('    public Window? Window { get; set; }', @'
+    public Window? Window { get; set; }
+    private UpdateCheckResult? _customStartupResult;
+    internal void UseStartupResult(UpdateCheckResult result) => _customStartupResult = result;
+'@)
+
 $text = Replace-Section $text '    public async Task CheckForUpdates()' "    [RelayCommand]`n    private async Task OpenDownloadPage()" @'
     public async Task CheckForUpdates()
     {
@@ -35,7 +43,8 @@ $text = Replace-Section $text '    public async Task CheckForUpdates()' "    [Re
         StatusText = "בודק עדכונים של הגרסה שלנו…";
         try
         {
-            var result = await _updateCheckService.CheckForUpdates();
+            var result = _customStartupResult ?? await _updateCheckService.CheckForUpdates();
+            _customStartupResult = null;
             ChangeLogText = result.ChangeLogText;
             StatusText = CustomUpdateChannel.Status;
             IsDownloadLinkVisible = CustomUpdateChannel.AuthenticationRequired;
@@ -105,3 +114,15 @@ $text = $text.Replace('FontSize = 13.5,', 'FontSize = 17,').Replace('FontSize = 
 Set-Content $path $text -Encoding utf8
 
 
+
+$path = 'src/ui/Features/Main/MainViewModel.cs'
+$text = Get-Content $path -Raw
+$text = Replace-Section $text '    private void StartCheckForUpdates()' '    private void FirstLoad()' @'
+    private void StartCheckForUpdates()
+    {
+        if (!Se.Settings.General.CheckForUpdatesOnStartup || UpdateCheckService.IsStoreManagedInstall ||
+            Application.Current?.ApplicationLifetime is not ClassicDesktopStyleApplicationLifetime) return;
+        _ = CustomCheckForUpdatesAtStartupAsync(_updateCheckService.CheckForUpdates, duration => Task.Delay(duration));
+    }
+'@
+Set-Content $path $text -Encoding utf8
