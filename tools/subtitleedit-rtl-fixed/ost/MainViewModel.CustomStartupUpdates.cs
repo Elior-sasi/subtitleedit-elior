@@ -43,17 +43,20 @@ public partial class MainViewModel
                 if (state < 0) return;
                 if (state == 1)
                 {
-                    await Dispatcher.UIThread.InvokeAsync(async () =>
+                    var opened = await Dispatcher.UIThread.InvokeAsync(async () =>
                     {
                         // Recheck on the UI thread immediately before opening, with no intervening await.
                         if (!owner.IsVisible || !owner.IsEnabled || owner.WindowState == WindowState.Minimized ||
                             owner.OwnedWindows.Any(w => w.IsVisible) || !Se.Settings.General.CheckForUpdatesOnStartup ||
-                            CustomUpdateChannel.IsInstallPending || !CustomStartupUpdatePrompts.Add(key)) return;
+                            CustomUpdateChannel.IsInstallPending || !CustomStartupUpdatePrompts.Add(key)) return false;
                         // Use the update dialog directly: the generic editor-dialog wrapper pauses video.
                         await _windowService.ShowDialogAsync<CheckForUpdatesWindow, CheckForUpdatesViewModel>(
                             owner, vm => vm.UseStartupResult(result));
+                        _shortcutManager.ClearKeys();
+                        if (owner.IsVisible) RestoreFocusIfLost();
+                        return true;
                     });
-                    return;
+                    if (opened) return;
                 }
                 await delay(TimeSpan.FromSeconds(1));
             }

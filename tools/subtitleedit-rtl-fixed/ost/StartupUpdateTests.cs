@@ -23,7 +23,7 @@ public partial class OstTableTests
             if (owner.OwnedWindows.OfType<CheckForUpdatesWindow>().FirstOrDefault() is { } dialog) return dialog;
             await Task.Delay(10);
         }
-        throw new InvalidOperationException("The startup update dialog did not open.");
+        throw new InvalidOperationException($"The startup update dialog did not open. Visible={owner.IsVisible}, enabled={owner.IsEnabled}, state={owner.WindowState}, owned={string.Join(",", owner.OwnedWindows.Select(w => w.GetType().Name + ":" + w.IsVisible))}");
     }
 
     [AvaloniaFact]
@@ -72,10 +72,13 @@ public partial class OstTableTests
         var vm = (MainViewModel)main.DataContext!; owner.SuppressSaveChangesPromptOnClose(vm); vm.StopBackgroundWork();
         var blocker = new Window(); var modal = blocker.ShowDialog(owner);
         var waiting = new TaskCompletionSource(); var resume = new TaskCompletionSource();
-        Task Delay(TimeSpan duration)
+        async Task Delay(TimeSpan duration)
         {
-            if (duration.TotalSeconds == 15) return Task.CompletedTask;
-            waiting.TrySetResult(); return resume.Task;
+            if (duration.TotalSeconds == 15) return;
+            waiting.TrySetResult(); await resume.Task;
+            // Real startup polls once per second. Yield between simulated polls too,
+            // so Avalonia can finish restoring the modal owner before the next check.
+            await Task.Delay(10);
         }
         var result = new UpdateCheckResult { IsNewVersionAvailable = true, LatestVersion = "deferred-" + Guid.NewGuid() };
         try
