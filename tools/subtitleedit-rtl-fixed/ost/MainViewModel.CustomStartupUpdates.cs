@@ -43,7 +43,7 @@ public partial class MainViewModel
                 if (state < 0) return;
                 if (state == 1)
                 {
-                    var dialog = await Dispatcher.UIThread.InvokeAsync(async () =>
+                    await Dispatcher.UIThread.InvokeAsync(async () =>
                     {
                         // Recheck on the UI thread immediately before opening, with no intervening await.
                         if (!owner.IsVisible || !owner.IsEnabled || owner.WindowState == WindowState.Minimized ||
@@ -53,7 +53,6 @@ public partial class MainViewModel
                         await _windowService.ShowDialogAsync<CheckForUpdatesWindow, CheckForUpdatesViewModel>(
                             owner, vm => vm.UseStartupResult(result));
                     });
-                    await dialog;
                     return;
                 }
                 await delay(TimeSpan.FromSeconds(1));
