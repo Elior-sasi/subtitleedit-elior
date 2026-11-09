@@ -15,11 +15,16 @@ using Nikse.SubtitleEdit.Features.Main.MainHelpers;
 namespace UITests.Features.Main;
 public partial class OstTableTests
 {
-    private static async Task<CheckForUpdatesWindow> AwaitStartupUpdateWindow(Window owner)
+    private static async Task<CheckForUpdatesWindow> AwaitStartupUpdateWindow(Window owner, bool dismissEditorStartupMessages = false)
     {
         for (var i = 0; i < 100; i++)
         {
             Dispatcher.UIThread.RunJobs();
+            // The headless editor can queue its own startup MessageBox while a modal
+            // is open. After the intentional blocker is closed, dismiss that fixture
+            // message too: production correctly defers until ALL owned dialogs close.
+            if (dismissEditorStartupMessages)
+                foreach (var message in owner.OwnedWindows.Where(w => w.GetType().Name == "MessageBox").ToArray()) message.Close();
             if (owner.OwnedWindows.OfType<CheckForUpdatesWindow>().FirstOrDefault() is { } dialog) return dialog;
             await Task.Delay(10);
         }
@@ -87,7 +92,7 @@ public partial class OstTableTests
             await waiting.Task;
             Assert.Empty(owner.OwnedWindows.OfType<CheckForUpdatesWindow>());
             blocker.Close(); await modal; resume.SetResult();
-            var dialog = await AwaitStartupUpdateWindow(owner); dialog.Close(); await pending;
+            var dialog = await AwaitStartupUpdateWindow(owner, dismissEditorStartupMessages: true); dialog.Close(); await pending;
             owner.Close();
             var checks = 0;
             await vm.CustomCheckForUpdatesAtStartupAsync(() => { checks++; return Task.FromResult(result); }, _ => Task.CompletedTask);
