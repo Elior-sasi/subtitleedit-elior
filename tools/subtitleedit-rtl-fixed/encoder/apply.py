@@ -22,3 +22,24 @@ if ui.count(anchor) != 1:
 extra = [('arrow-up','Move up','הזז למעלה','QueueUp'),('arrow-down','Move down','הזז למטה','QueueDown'),('floppy-disk','Save queue','שמור תור','SaveQueue'),('folder-open','Open queue','פתח תור','OpenQueue')]
 rows = [f'            Action("fa-solid fa-{icon}", BurnInViewModel.QueueLabel("{en}", "{he}"), vm.{command}Command),' for icon,en,he,command in extra]
 p.write_text(ui.replace(anchor, '\n'.join([anchor]+rows)), encoding="utf-8")
+ui = p.read_text(encoding="utf-8")
+anchor = "        rows.Children.Add(Row(Se.Language.General.Resolution, resolution));"
+if ui.count(anchor) != 1: raise SystemExit("Profile toolbar changed")
+profiles = """        var profile = new ComboBox { ItemsSource = new[] {
+            BurnInViewModel.QueueLabel("Maximum quality (slow, CRF 18)", "איכות מרבית (slow, CRF 18)"),
+            BurnInViewModel.QueueLabel("High quality (slow, CRF 20)", "איכות גבוהה (slow, CRF 20)"),
+            BurnInViewModel.QueueLabel("Balanced (medium, CRF 22)", "מאוזן (medium, CRF 22)"),
+            BurnInViewModel.QueueLabel("Fast (NVENC if available)", "מהיר (NVENC אם זמין)") } };
+        var label = BurnInViewModel.QueueLabel("Apply encoding profile", "החל פרופיל קידוד");
+        AutomationProperties.SetName(profile, label);
+        ToolTip.SetTip(profile, label);
+        profile.Bind(IsEnabledProperty, new Binding(nameof(vm.IsGenerating)) { Converter = InverseBooleanConverter.Instance });
+        profile.SelectionChanged += async (_, _) => {
+            var index = profile.SelectedIndex;
+            if (index < 0) return;
+            profile.SelectedIndex = -1;
+            await vm.ApplyEncoderProfile(index);
+        };
+        rows.Children.Add(Row(label, profile));
+"""
+p.write_text(ui.replace(anchor, profiles+anchor), encoding="utf-8")
