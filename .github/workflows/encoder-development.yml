@@ -1,0 +1,28 @@
+name: Encoder development checks
+on:
+  push:
+    branches: [feature/pro-video-encoder]
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: custom
+      - uses: actions/checkout@v5
+        with:
+          repository: SubtitleEdit/subtitleedit
+          ref: 8000b784a9bea485af3514c64f3ecaab2cb3ff5b
+          path: subtitleedit
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Apply guarded encoder patch
+        run: python custom/tools/subtitleedit-rtl-fixed/encoder/apply.py subtitleedit
+      - name: Build Windows UI
+        run: dotnet build subtitleedit/src/ui/UI.csproj -c Release
+      - name: Run existing UI regressions
+        run: dotnet test subtitleedit/tests/UI/UITests.csproj -c Release --logger trx
