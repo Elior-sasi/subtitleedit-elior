@@ -1,5 +1,5 @@
 import json, pathlib, sys
-patch = json.loads(pathlib.Path(__file__).with_name("audio-copy.patch.json").read_text())
+patch = json.loads(pathlib.Path(__file__).with_name("audio-copy.patch.json").read_text(encoding="utf-8"))
 p = pathlib.Path(sys.argv[1]) / patch["path"]
 s = p.read_text(encoding="utf-8-sig")
 if s.count(patch["old"]) != 1:
