@@ -14,3 +14,11 @@ if src.count(anchor) != 1:
     raise SystemExit("Encoder availability hook changed")
 vm.write_text(src.replace(anchor, "var available = HardwareEncoderChecks.Check(FfmpegHelper.GetFfmpegLocation(), FfmpegHelper.GetAvailableEncoders());"), encoding="utf-8")
 shutil.copyfile(pathlib.Path(__file__).with_name("HardwareEncoderChecks.cs"), p.with_name("HardwareEncoderChecks.cs"))
+shutil.copyfile(pathlib.Path(__file__).with_name("BurnInQueue.cs"), p.with_name("BurnInQueue.cs"))
+ui = p.read_text(encoding="utf-8")
+anchor = '            Action("fa-solid fa-plus", Se.Language.General.AddDotDotDot, vm.AddCommand),'
+if ui.count(anchor) != 1:
+    raise SystemExit("Queue toolbar changed")
+extra = [('arrow-up','Move up','הזז למעלה','QueueUp'),('arrow-down','Move down','הזז למטה','QueueDown'),('floppy-disk','Save queue','שמור תור','SaveQueue'),('folder-open','Open queue','פתח תור','OpenQueue')]
+rows = [f'            Action("fa-solid fa-{icon}", BurnInViewModel.QueueLabel("{en}", "{he}"), vm.{command}Command),' for icon,en,he,command in extra]
+p.write_text(ui.replace(anchor, '\n'.join([anchor]+rows)), encoding="utf-8")
