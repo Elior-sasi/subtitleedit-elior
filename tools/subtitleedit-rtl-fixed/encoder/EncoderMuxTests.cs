@@ -61,6 +61,39 @@ public class EncoderMuxTests
         } finally { Directory.Delete(dir,true); }
     }
 
+    [Avalonia.Headless.XUnit.AvaloniaFact]
+    public async Task SoftTracksPreserveSourceAndShowHebrewPunctuationOnLeft()
+    {
+        var dir = Directory.CreateTempSubdirectory("soft-direction-").FullName;
+        var vm = new BurnInViewModel(new FolderHelper(), new FileHelper(), new Nikse.SubtitleEdit.Logic.WindowService(new NoServices()));
+        try {
+            await Run(dir,"ffmpeg","-v error -f lavfi -i color=s=640x360:r=4 -t 1 -c:v libx264 input.mp4");
+            var srt = Path.Combine(dir,"mixed.srt");
+            await File.WriteAllTextAsync(srt,"1\n00:00:00,000 --> 00:00:01,000\nבדקת USB            ?\n");
+            await Run(dir,"ffmpeg","-v error -i mixed.srt mixed.ass");
+            foreach (var source in new[]{srt,Path.Combine(dir,"mixed.ass")}) {
+                var original = await File.ReadAllBytesAsync(source);
+                var prepared = vm.PrepareSoftTrack(source);
+                Assert.NotEqual(source,prepared);
+                try {
+                    Assert.Equal(prepared,vm.PrepareSoftTrack(prepared));
+                    Assert.Equal(original,await File.ReadAllBytesAsync(source));
+                    foreach(var ext in new[]{"mp4","mkv"}) {
+                        var name = $"soft-{Path.GetExtension(source)[1..]}.{ext}";
+                        await Run(dir,"ffmpeg",SubtitleMux.SoftOnly(Path.Combine(dir,"input.mp4"),prepared,Path.Combine(dir,name)));
+                        var extracted=await Run(dir,"ffmpeg",$"-v error -i {name} -map 0:s:0 -f srt -");
+                        Assert.Contains("\u202bבדקת USB            ?\u202c",extracted);
+                        await Run(dir,"ffmpeg",$"-y -loglevel error -i {name} -vf subtitles={name} -frames:v 1 -pix_fmt gray -f rawvideo frame.bin");
+                        var pixels=await File.ReadAllBytesAsync(Path.Combine(dir,"frame.bin"));
+                        var xs=Enumerable.Range(0,640).Where(x=>Enumerable.Range(0,360).Any(y=>pixels[y*640+x]>110)).ToArray();
+                        int split=Enumerable.Range(1,xs.Length-1).OrderByDescending(i=>xs[i]-xs[i-1]).First();
+                        Assert.True(xs[split]-xs[split-1]>15 && (xs[split-1]-xs[0]+1)*2 < xs[^1]-xs[split]+1);
+                    }
+                } finally { File.Delete(prepared); }
+            }
+        } finally { Directory.Delete(dir,true); }
+    }
+
     [Theory]
     [InlineData(".mkv")]
     [InlineData(".mp4")]

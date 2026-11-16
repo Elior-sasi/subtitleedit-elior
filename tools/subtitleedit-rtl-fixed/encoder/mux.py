@@ -7,6 +7,7 @@ def apply(window, vm, root):
         if src.count(old) != 1: raise ValueError(f'{path}: mux anchor changed: {old}')
         path.write_text(src.replace(old, new), encoding='utf-8')
     shutil.copyfile(Path(__file__).with_name('SubtitleMux.cs'), window.with_name('SubtitleMux.cs'))
+    shutil.copyfile(Path(__file__).with_name('SoftTrackDirection.cs'), vm.with_name('SoftTrackDirection.cs'))
     edit(window,'        rows.Children.Add(Row(label, profile));','''        rows.Children.Add(Row(label, profile));
         var muxLabel = BurnInViewModel.QueueLabel("Subtitle output", "מצב כתוביות בפלט");
         var mode = new ComboBox { ItemsSource = new[] {
@@ -58,9 +59,9 @@ def apply(window, vm, root):
         var emptySubtitleCount =''')
     edit(vm,'jobItem.AssaSubtitleFileName = MakeAssa(jobItem, jobItem.SubtitleFileName);','jobItem.AssaSubtitleFileName = SubtitleOutputMode == 1 ? jobItem.SubtitleFileName : MakeAssa(jobItem, jobItem.SubtitleFileName);')
     edit(vm,'var ffmpegParameters = FfmpegGenerator.GenerateHardcodedVideoFile(','''var ffmpegParameters = !preview && SubtitleOutputMode == 1
-            ? SubtitleMux.SoftOnly(jobItem.InputVideoFileName, jobItem.SubtitleFileName, jobItem.OutputVideoFileName)
+            ? SubtitleMux.SoftOnly(jobItem.InputVideoFileName, PrepareSoftTrack(jobItem.SubtitleFileName), jobItem.OutputVideoFileName)
             : FfmpegGenerator.GenerateHardcodedVideoFile(''')
-    edit(vm,'Stereo3DImage.MaxDepth));\n\n        // Before the prompt','Stereo3DImage.MaxDepth),\n            !preview && SubtitleOutputMode == 2 ? SoftTrackFor(jobItem) : null);\n\n        // Before the prompt')
+    edit(vm,'Stereo3DImage.MaxDepth));\n\n        // Before the prompt','Stereo3DImage.MaxDepth),\n            !preview && SubtitleOutputMode == 2 ? PrepareSoftTrack(SoftTrackFor(jobItem)) : null);\n\n        // Before the prompt')
     gen = root/'src/ui/Logic/Media/FfmpegGenerator.cs'
     edit(gen,'Export3DMode mode3D = Export3DMode.None, int depth3D = 0)\n    {\n        if (width', 'Export3DMode mode3D = Export3DMode.None, int depth3D = 0, string? softSubtitle = null)\n    {\n        if (width')
     edit(gen, '        var passSettings = string.Empty;', """        var softOptions = softSubtitle == null ? string.Empty : Features.Video.BurnIn.SubtitleMux.SubtitleOptions(outputVideoFileName.Trim('"'));
