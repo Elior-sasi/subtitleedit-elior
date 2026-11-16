@@ -148,10 +148,25 @@ jobs:
         working-directory: subtitleedit
         run: ..\custom\tools\subtitleedit-rtl-fixed\ost\apply-player-diagnostics.ps1
 
+      - name: Integrate professional encoder controls
+        working-directory: subtitleedit
+        run: python ../custom/tools/subtitleedit-rtl-fixed/encoder/apply.py .
+
       - name: Restore
         shell: pwsh
         working-directory: subtitleedit
         run: dotnet restore
+
+      - name: Test encoder exports on real Windows media
+        working-directory: subtitleedit
+        shell: pwsh
+        run: |
+          if (!(Get-Command ffmpeg -ErrorAction SilentlyContinue)) { choco install ffmpeg -y --no-progress }
+          Get-Command ffmpeg,ffprobe -ErrorAction Stop
+          dotnet test tests/UI/UITests.csproj -c Release --filter FullyQualifiedName~EncoderMuxTests --logger "trx;LogFileName=encoder.trx" --results-directory "$env:RUNNER_TEMP/encoder-results"
+          if ($LASTEXITCODE -ne 0) { throw "Encoder media tests failed." }
+          [xml]$trx = Get-Content "$env:RUNNER_TEMP/encoder-results/encoder.trx" -Raw
+          if ([int]$trx.TestRun.ResultSummary.Counters.passed -lt 1) { throw "No encoder media tests passed." }
 
       - name: Test OST regressions
         env:
