@@ -43,3 +43,8 @@ profiles = """        var profile = new ComboBox { ItemsSource = new[] {
         rows.Children.Add(Row(label, profile));
 """
 p.write_text(ui.replace(anchor, profiles+anchor), encoding="utf-8")
+from mux import apply
+apply(p, vm, pathlib.Path(sys.argv[1]))
+testdir = pathlib.Path(sys.argv[1]) / 'tests/UI/Features/Video'
+if testdir.is_dir():
+    shutil.copyfile(pathlib.Path(__file__).with_name('EncoderMuxTests.cs'), testdir / 'EncoderMuxTests.cs')

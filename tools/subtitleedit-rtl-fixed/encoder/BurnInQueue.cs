@@ -34,6 +34,15 @@ public partial class BurnInViewModel
             }).ToArray();
     }
 
+    internal string AlternateSoftTrack { get; private set; } = "";
+    private string SoftTrackFor(BurnInJobItem job) => SubtitleOutputMode == 2 && !IsBatchMode && AlternateSoftTrack.Length != 0 ? AlternateSoftTrack : job.SubtitleFileName;
+    internal async Task PickSoftTrack()
+    {
+        if (IsGenerating || IsBatchMode) return;
+        var paths = await _fileHelper.PickOpenFiles(Window!, QueueLabel("Select soft subtitle track", "בחירת רצועת כתוביות רכה"), "SRT/ASS/SSA", ["*.srt","*.ass","*.ssa"], Se.Language.General.AllFiles, ["*"]);
+        if (!IsGenerating && paths?.FirstOrDefault() is string path) AlternateSoftTrack = path;
+    }
+
     internal async Task ApplyEncoderProfile(int index)
     {
         if (IsGenerating || index < 0 || index > 3) return;

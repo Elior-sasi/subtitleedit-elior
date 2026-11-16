@@ -24,5 +24,24 @@ jobs:
         run: python custom/tools/subtitleedit-rtl-fixed/encoder/apply.py subtitleedit
       - name: Build Windows UI
         run: dotnet build subtitleedit/src/ui/UI.csproj -c Release
+      - name: Install FFmpeg for media tests
+        run: |
+          if (!(Get-Command ffmpeg -ErrorAction SilentlyContinue)) { choco install ffmpeg -y --no-progress }
+          ffmpeg -version
+      - name: Test production encoder commands against real media
+        run: dotnet test subtitleedit/tests/UI/UITests.csproj -c Release --filter FullyQualifiedName~EncoderMuxTests
       - name: Run existing UI regressions
         run: dotnet test subtitleedit/tests/UI/UITests.csproj -c Release --logger trx
+
+  baseline:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: SubtitleEdit/subtitleedit
+          ref: 8000b784a9bea485af3514c64f3ecaab2cb3ff5b
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Compare actor regressions on unmodified upstream
+        run: dotnet test tests/UI/UITests.csproj -c Release --filter FullyQualifiedName~EditBoxActorTests
