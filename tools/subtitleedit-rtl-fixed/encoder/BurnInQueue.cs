@@ -11,6 +11,39 @@ namespace Nikse.SubtitleEdit.Features.Video.BurnIn;
 
 public partial class BurnInViewModel
 {
+    [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty] private bool _pauseBetweenJobs;
+    private TaskCompletionSource? _queueResume;
+    partial void OnPauseBetweenJobsChanged(bool value)
+    {
+        if (!value) _queueResume?.TrySetResult();
+    }
+    private void ReleaseQueuePause()
+    {
+        PauseBetweenJobs = false;
+        _queueResume?.TrySetResult();
+        _queueResume = null;
+    }
+
+    private string _reportedFps = "", _reportedSpeed = "", _reportedSize = "";
+    private void ResetEncoderStats() { _reportedFps = _reportedSpeed = _reportedSize = ""; }
+    private void ReadEncoderStats(string line)
+    {
+        int sep = line.IndexOf('=');
+        if (sep < 1) return;
+        var key = line[..sep];
+        if (key is not ("fps" or "speed" or "total_size")) return;
+        var raw = line[(sep+1)..].Trim().TrimEnd('x');
+        if (!double.TryParse(raw,System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out var value) || !double.IsFinite(value) || value < 0) return;
+        if (key == "fps") _reportedFps = $" · {value:0.#} FPS";
+        if (key == "speed") _reportedSpeed = $" · {value:0.##}×";
+        if (key == "total_size") _reportedSize = $" · {value/1048576:0.0} MiB";
+    }
+    private string FormatEncoderStats(int percent, TimeSpan elapsed)
+    {
+        var queue = JobItems.Count <= 1 ? "" : $" · {QueueLabel("Queue (by file)", "תור (לפי קובץ)")} {(_jobItemIndex * 100d + percent) / JobItems.Count:0}%";
+        return $" · {elapsed:hh\\:mm\\:ss}{_reportedFps}{_reportedSpeed}{_reportedSize}{queue}";
+    }
+
     private sealed record QueueFile(int Version, QueueEntry[] Items);
     private sealed record QueueEntry(string Video, string Subtitle, int Width, int Height);
     internal static string QueueLabel(string en, string he) =>
