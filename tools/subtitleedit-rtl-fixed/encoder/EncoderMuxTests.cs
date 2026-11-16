@@ -23,6 +23,44 @@ public class EncoderMuxTests
         return await data;
     }
 
+    private sealed class NoServices : System.IServiceProvider
+    {
+        public object? GetService(System.Type t) => null;
+    }
+
+    [Avalonia.Headless.XUnit.AvaloniaFact]
+    public async Task EncodedFramePlacesHebrewPunctuationOnLeftAndEnglishOnRight()
+    {
+        var dir = Directory.CreateTempSubdirectory("encoder-bidi-").FullName;
+        var vm = new BurnInViewModel(new FolderHelper(),
+            new FileHelper(), new Nikse.SubtitleEdit.Logic.WindowService(new NoServices()));
+        try {
+            foreach (var (words, mark, rtl) in new[] { ("את באה", "?", true), ("בדקת USB", "!", true), ("Ready", "?", false) }) {
+                // A deliberate gap isolates the final punctuation so we can measure its physical side.
+                var srt = Path.Combine(dir, "test.srt");
+                var text = $"1\n00:00:00,000 --> 00:00:01,000\n{words}            {mark}\n";
+                await File.WriteAllTextAsync(srt, text);
+                await Run(dir, "ffmpeg", "-y -loglevel error -i test.srt test.ass");
+                var source = Path.Combine(dir, "test.ass");
+                var original = await File.ReadAllBytesAsync(source);
+                var temp = vm.MakeAssa(new BurnInJobItem("input.mp4",640,360) { SubtitleFileName = source }, source);
+                try { File.Copy(temp, Path.Combine(dir,"render.ass"), true); }
+                finally { File.Delete(temp); }
+                Assert.Equal(original, await File.ReadAllBytesAsync(source));
+                await Run(dir,"ffmpeg","-y -loglevel error -f lavfi -i color=s=640x360:r=1 -vf ass=render.ass -frames:v 1 -c:v libx264 burn.mp4");
+                await Run(dir,"ffmpeg","-y -loglevel error -i burn.mp4 -frames:v 1 -pix_fmt gray -f rawvideo frame.bin");
+                var pixels = await File.ReadAllBytesAsync(Path.Combine(dir,"frame.bin"));
+                Assert.Equal(640*360,pixels.Length);
+                var xs = Enumerable.Range(0,640).Where(x => Enumerable.Range(0,360).Any(y => pixels[y*640+x]>110)).ToArray();
+                Assert.True(xs.Length > 10);
+                int split = Enumerable.Range(1,xs.Length-1).OrderByDescending(i=>xs[i]-xs[i-1]).First();
+                Assert.True(xs[split]-xs[split-1]>15);
+                int left=xs[split-1]-xs[0]+1, right=xs[^1]-xs[split]+1;
+                Assert.True(rtl ? left*2<right : right*2<left, $"{words}{mark}: left={left}, right={right}");
+            }
+        } finally { Directory.Delete(dir,true); }
+    }
+
     [Theory]
     [InlineData(".mkv")]
     [InlineData(".mp4")]

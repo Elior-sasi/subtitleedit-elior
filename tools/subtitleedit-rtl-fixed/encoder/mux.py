@@ -28,6 +28,15 @@ def apply(window, vm, root):
         alternate.Click += async (_, _) => { await vm.PickSoftTrack(); track.Text = vm.AlternateSoftTrack; };
         rows.Children.Add(alternate);
         rows.Children.Add(track);''')
+    edit(vm,'        return _tempSubtitleFiles.Write(subtitle, new AdvancedSubStationAlpha());', r"""        // libass otherwise uses an LTR paragraph base for ordinary ASS styles.
+        // Only this parsed, render-only copy goes to the burn filter.
+        foreach (var cue in subtitle.Paragraphs)
+        {
+            if (System.Text.RegularExpressions.Regex.IsMatch(cue.Text, @"[א-תיִ-ﭏ]") &&
+                !cue.Text.Contains(@"\fe", StringComparison.OrdinalIgnoreCase))
+                cue.Text = @"{\fe-1}" + cue.Text;
+        }
+        return _tempSubtitleFiles.Write(subtitle, new AdvancedSubStationAlpha());""")
     edit(vm,'    private string _imageSubtitleFileName', '    internal int SubtitleOutputMode { get; set; }\n    private string _imageSubtitleFileName')
     edit(vm,'        var emptySubtitleCount =','''        if (SubtitleOutputMode != 0)
         {
