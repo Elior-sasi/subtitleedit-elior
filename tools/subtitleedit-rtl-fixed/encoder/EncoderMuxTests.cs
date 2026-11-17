@@ -23,6 +23,37 @@ public class EncoderMuxTests
         return await data;
     }
 
+    [Avalonia.Headless.XUnit.AvaloniaFact]
+    public void QuickClipRequiresTwoOrderedMarksAndLeavesEarlierExportsIntact()
+    {
+        var vm=new BurnInViewModel(new FolderHelper(),new FileHelper(),new Nikse.SubtitleEdit.Logic.WindowService(new NoServices()));
+        vm.IsBatchMode=false;
+        vm.MarkClip(false,3,10);
+        Assert.False(vm.ClipReady);
+        vm.MarkClip(true,1.234,10);
+        vm.MarkClip(false,3.456,10);
+        Assert.True(vm.ClipReady);
+        Assert.Contains("01.234",vm.ClipHint);
+        Assert.Contains("03.456",vm.ClipHint);
+        vm.MarkClip(true,4,10);
+        Assert.False(vm.ClipReady);
+        vm.MarkClip(false,3,10);
+        Assert.False(vm.ClipReady);
+        vm.MarkClip(false,5,10);
+        Assert.True(vm.ClipReady);
+        var dir=Directory.CreateTempSubdirectory().FullName;
+        try {
+            string source=Path.Combine(dir,"episode.mp4");
+            File.WriteAllText(source,"source");
+            var first=BurnInViewModel.NewClipPath(source,".mp4");
+            Assert.Equal(Path.Combine(dir,"episode-clip.mp4"),first);
+            File.WriteAllText(first,"old clip");
+            Assert.Equal(Path.Combine(dir,"episode-clip-2.mp4"),BurnInViewModel.NewClipPath(source,".mp4"));
+            Assert.Equal("old clip",File.ReadAllText(first));
+            Assert.Equal("source",File.ReadAllText(source));
+        } finally {Directory.Delete(dir,true);}
+    }
+
     private sealed class NoServices : System.IServiceProvider
     {
         public object? GetService(System.Type t) => null;

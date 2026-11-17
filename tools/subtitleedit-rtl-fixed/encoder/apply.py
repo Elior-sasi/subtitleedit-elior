@@ -52,3 +52,5 @@ from queue_progress import apply as apply_progress
 apply_progress(p, vm)
 from timeline import apply as apply_timeline
 apply_timeline(p, vm)
+from quick_clip import apply as apply_quick_clip
+apply_quick_clip(p, vm)
