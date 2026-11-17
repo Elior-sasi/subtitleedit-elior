@@ -128,4 +128,33 @@ public class EncoderMuxTests
             }
         } finally { Directory.Delete(dir,true); }
     }
+
+    [Avalonia.Headless.XUnit.AvaloniaFact]
+    public async Task TimelineCutClipsCrossingCuesAndExportsOnlyTheChosenFrames()
+    {
+        var dir=Directory.CreateTempSubdirectory("encoder-cut-").FullName;
+        var vm=new BurnInViewModel(new FolderHelper(),new FileHelper(),new Nikse.SubtitleEdit.Logic.WindowService(new NoServices()));
+        try {
+            var input=Path.Combine(dir,"source.mp4");
+            var sub=Path.Combine(dir,"dialogue.srt");
+            var output=Path.Combine(dir,"clip.mp4");
+            await Run(dir,"ffmpeg","-v error -f lavfi -i testsrc2=s=320x180:r=20 -f lavfi -i sine=f=500 -t 3 -c:v libx264 -threads 2 -c:a aac source.mp4");
+            await File.WriteAllTextAsync(sub,"1\n00:00:00,200 --> 00:00:01,500\nFirst\n\n2\n00:00:01,800 --> 00:00:02,900\nLast\n\n3\n00:00:02,950 --> 00:00:03,000\nOutside\n");
+            var bytes=await File.ReadAllBytesAsync(sub);
+            var peaks=await TimelineChart.ReadPeaks("ffmpeg",input,1000,System.Threading.CancellationToken.None);
+            Assert.True(peaks.Length>100 && peaks.Max()>0.01);
+            vm.IsCutActive=true;vm.CutFrom=System.TimeSpan.FromSeconds(1);vm.CutTo=System.TimeSpan.FromSeconds(2);
+            var temp=vm.TimelineSoftTrack(sub);
+            try {
+                await Run(dir,"ffmpeg",FfmpegGenerator.GenerateHardcodedVideoFile(input,"",output,320,180,"libx264","veryfast","yuv420p","20","aac",false,"48000","","128k","","",cutStart:"-ss 1",cutEnd:"-t 1",softSubtitle:temp));
+                var extracted=await Run(dir,"ffmpeg","-v error -i clip.mp4 -map 0:s:0 -f srt -");
+                Assert.Contains("00:00:00,000 --> 00:00:00,500",extracted);
+                Assert.Contains("00:00:00,800 --> 00:00:01,000",extracted);
+                Assert.DoesNotContain("Outside",extracted);
+                var frames=await Run(dir,"ffprobe","-v error -select_streams v:0 -count_frames -show_entries stream=nb_read_frames -of csv=p=0 clip.mp4");
+                Assert.Equal("20",frames.Trim());
+                Assert.Equal(bytes,await File.ReadAllBytesAsync(sub));
+            } finally {File.Delete(temp);}
+        } finally {Directory.Delete(dir,true);}
+    }
 }

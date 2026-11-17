@@ -50,3 +50,5 @@ if testdir.is_dir():
     shutil.copyfile(pathlib.Path(__file__).with_name('EncoderMuxTests.cs'), testdir / 'EncoderMuxTests.cs')
 from queue_progress import apply as apply_progress
 apply_progress(p, vm)
+from timeline import apply as apply_timeline
+apply_timeline(p, vm)
