@@ -44,18 +44,40 @@ Name: "desktopicon"; Description: "צור קיצור דרך בשולחן העב�
 [Registry]
 Root: HKCU; Subkey: "Software\RegisteredApplications"; ValueType: string; ValueName: "SubtitleEditElior"; ValueData: "Software\SubtitleEditElior\Capabilities"; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\SubtitleEditElior\Capabilities"; ValueType: string; ValueName: "ApplicationName"; ValueData: "Subtitle Edit — אליאור"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\SubtitleEditElior\Capabilities\FileAssociations"; ValueType: string; ValueName: ".srt"; ValueData: "Elior.SubtitleEdit.Subtitle"
-Root: HKCU; Subkey: "Software\SubtitleEditElior\Capabilities\FileAssociations"; ValueType: string; ValueName: ".ass"; ValueData: "Elior.SubtitleEdit.Subtitle"
-Root: HKCU; Subkey: "Software\SubtitleEditElior\Capabilities\FileAssociations"; ValueType: string; ValueName: ".ssa"; ValueData: "Elior.SubtitleEdit.Subtitle"
-Root: HKCU; Subkey: "Software\SubtitleEditElior\Capabilities\FileAssociations"; ValueType: string; ValueName: ".vtt"; ValueData: "Elior.SubtitleEdit.Subtitle"
+Root: HKCU; Subkey: "Software\SubtitleEditElior\Capabilities\FileAssociations"; ValueType: string; ValueName: ".srt"; ValueData: "Elior.SubtitleEdit.SRT"
+Root: HKCU; Subkey: "Software\SubtitleEditElior\Capabilities\FileAssociations"; ValueType: string; ValueName: ".ass"; ValueData: "Elior.SubtitleEdit.ASS"
+Root: HKCU; Subkey: "Software\SubtitleEditElior\Capabilities\FileAssociations"; ValueType: string; ValueName: ".ssa"; ValueData: "Elior.SubtitleEdit.SSA"
+Root: HKCU; Subkey: "Software\SubtitleEditElior\Capabilities\FileAssociations"; ValueType: string; ValueName: ".vtt"; ValueData: "Elior.SubtitleEdit.VTT"
+; Keep the legacy ProgID working for existing protected Windows UserChoice selections.
+; Never rewrite UserChoice or extension defaults; new selections use the format-specific IDs.
 Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.Subtitle"; ValueType: string; ValueData: "Subtitle file — Elior"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.Subtitle"; ValueType: string; ValueName: "AppUserModelID"; ValueData: "Elior.SubtitleEdit.Hebrew"
 Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.Subtitle\DefaultIcon"; ValueType: string; ValueData: "{app}\SubtitleEdit.exe,0"
 Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.Subtitle\shell\open\command"; ValueType: string; ValueData: """{app}\SubtitleEdit.exe"" ""%1"""
-Root: HKCU; Subkey: "Software\Classes\.srt\OpenWithProgids"; ValueType: string; ValueName: "Elior.SubtitleEdit.Subtitle"; ValueData: ""; Flags: uninsdeletevalue
-Root: HKCU; Subkey: "Software\Classes\.ass\OpenWithProgids"; ValueType: string; ValueName: "Elior.SubtitleEdit.Subtitle"; ValueData: ""; Flags: uninsdeletevalue
-Root: HKCU; Subkey: "Software\Classes\.ssa\OpenWithProgids"; ValueType: string; ValueName: "Elior.SubtitleEdit.Subtitle"; ValueData: ""; Flags: uninsdeletevalue
-Root: HKCU; Subkey: "Software\Classes\.vtt\OpenWithProgids"; ValueType: string; ValueName: "Elior.SubtitleEdit.Subtitle"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.SRT"; ValueType: string; ValueData: "SubRip subtitle file"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.SRT"; ValueType: string; ValueName: "AppUserModelID"; ValueData: "Elior.SubtitleEdit.Hebrew"
+Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.SRT\DefaultIcon"; ValueType: string; ValueData: "{app}\SubtitleEdit.exe,0"
+Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.SRT\shell\open\command"; ValueType: string; ValueData: """{app}\SubtitleEdit.exe"" ""%1"""
+Root: HKCU; Subkey: "Software\Classes\.srt\OpenWithProgids"; ValueType: string; ValueName: "Elior.SubtitleEdit.SRT"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Classes\.srt\OpenWithProgids"; ValueType: none; ValueName: "Elior.SubtitleEdit.Subtitle"; Flags: deletevalue
+Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.ASS"; ValueType: string; ValueData: "Advanced SubStation Alpha subtitle file"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.ASS"; ValueType: string; ValueName: "AppUserModelID"; ValueData: "Elior.SubtitleEdit.Hebrew"
+Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.ASS\DefaultIcon"; ValueType: string; ValueData: "{app}\SubtitleEdit.exe,0"
+Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.ASS\shell\open\command"; ValueType: string; ValueData: """{app}\SubtitleEdit.exe"" ""%1"""
+Root: HKCU; Subkey: "Software\Classes\.ass\OpenWithProgids"; ValueType: string; ValueName: "Elior.SubtitleEdit.ASS"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Classes\.ass\OpenWithProgids"; ValueType: none; ValueName: "Elior.SubtitleEdit.Subtitle"; Flags: deletevalue
+Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.SSA"; ValueType: string; ValueData: "SubStation Alpha subtitle file"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.SSA"; ValueType: string; ValueName: "AppUserModelID"; ValueData: "Elior.SubtitleEdit.Hebrew"
+Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.SSA\DefaultIcon"; ValueType: string; ValueData: "{app}\SubtitleEdit.exe,0"
+Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.SSA\shell\open\command"; ValueType: string; ValueData: """{app}\SubtitleEdit.exe"" ""%1"""
+Root: HKCU; Subkey: "Software\Classes\.ssa\OpenWithProgids"; ValueType: string; ValueName: "Elior.SubtitleEdit.SSA"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Classes\.ssa\OpenWithProgids"; ValueType: none; ValueName: "Elior.SubtitleEdit.Subtitle"; Flags: deletevalue
+Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.VTT"; ValueType: string; ValueData: "WebVTT subtitle file"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.VTT"; ValueType: string; ValueName: "AppUserModelID"; ValueData: "Elior.SubtitleEdit.Hebrew"
+Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.VTT\DefaultIcon"; ValueType: string; ValueData: "{app}\SubtitleEdit.exe,0"
+Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.VTT\shell\open\command"; ValueType: string; ValueData: """{app}\SubtitleEdit.exe"" ""%1"""
+Root: HKCU; Subkey: "Software\Classes\.vtt\OpenWithProgids"; ValueType: string; ValueName: "Elior.SubtitleEdit.VTT"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Classes\.vtt\OpenWithProgids"; ValueType: none; ValueName: "Elior.SubtitleEdit.Subtitle"; Flags: deletevalue
 Root: HKCU; Subkey: "Software\Classes\AppUserModelId\Elior.SubtitleEdit.Hebrew"; ValueType: string; ValueName: "DisplayName"; ValueData: "Subtitle Edit — אליאור"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\AppUserModelId\Elior.SubtitleEdit.Hebrew"; ValueType: string; ValueName: "RelaunchCommand"; ValueData: """{app}\SubtitleEdit.exe"""
 Root: HKCU; Subkey: "Software\Classes\AppUserModelId\Elior.SubtitleEdit.Hebrew"; ValueType: string; ValueName: "RelaunchDisplayNameResource"; ValueData: "Subtitle Edit — אליאור"
