@@ -26,7 +26,7 @@ def apply(window,vm):
     replace(vm,'לכבות חיתוך, גודל יעד','לכבות גודל יעד')
     replace(vm,'!preview && SubtitleOutputMode == 1\n','!preview && SubtitleOutputMode == 1 && !IsCutActive\n')
     replace(vm,'            jobItem.AssaSubtitleFileName,\n','            SubtitleOutputMode == 1 ? string.Empty : jobItem.AssaSubtitleFileName,\n')
-    replace(vm,'!preview && SubtitleOutputMode == 2 ? PrepareSoftTrack(SoftTrackFor(jobItem)) : null','!preview && SubtitleOutputMode != 0 ? TimelineSoftTrack(SoftTrackFor(jobItem)) : null')
+    replace(vm,'!preview && SubtitleOutputMode == 2 ? PrepareSoftTrack(SoftTrackFor(jobItem)) : null','!preview && SubtitleOutputMode != 0 ? TimelineSoftTrack(SoftTrackFor(jobItem), jobItem.InputVideoFileName) : null')
     replace(vm,'        var emptySubtitleCount =','''        if (SubtitleOutputMode != 0 && IsCutActive && JobItems.Any(j =>
             Subtitle.Parse(SoftTrackFor(j)) is not Subtitle sub || GetSubtitleBasedOnCut(sub).Paragraphs.Count == 0))
         {
@@ -38,3 +38,8 @@ def apply(window,vm):
     replace(vm.with_name('BurnInJobItem.cs'),'    public string AssaSubtitleFileName','    internal string? TimelineBurnFile { get; set; }\n    public string AssaSubtitleFileName')
     replace(window,'רצועה רכה בלבד — העתקת וידאו וכל רצועות השמע','רצועה רכה בלבד — ללא חיתוך: העתקה; בחיתוך: קידוד וידאו')
     replace(window,'Soft only — copy video and all audio','Soft only — copy without trimming; encode video for accurate cuts')
+
+    # beta12 accounts for nonzero media origins when rebasing a trimmed track.
+    if 'GetSubtitleBasedOnCut(Subtitle inputSubtitle, string videoFileName)' in vm.read_text(encoding='utf-8-sig'):
+        replace(vm, 'GetSubtitleBasedOnCut(sub).Paragraphs', 'GetSubtitleBasedOnCut(sub, j.InputVideoFileName).Paragraphs')
+        replace(vm.with_name('EncoderTimeline.cs'), 'GetSubtitleBasedOnCut(src);', 'GetSubtitleBasedOnCut(src, videoFileName ?? VideoFileName);')

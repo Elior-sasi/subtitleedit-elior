@@ -30,7 +30,7 @@ public partial class BurnInViewModel
         return result;
     }
 
-    internal string TimelineSoftTrack(string file)
+    internal string TimelineSoftTrack(string file, string? videoFileName = null)
     {
         if (!IsCutActive) return PrepareSoftTrack(file);
         var src = Subtitle.Parse(file) ?? throw new InvalidDataException("Cannot read subtitle track.");
