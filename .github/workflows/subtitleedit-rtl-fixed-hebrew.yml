@@ -148,6 +148,11 @@ jobs:
         working-directory: subtitleedit
         run: ..\custom\tools\subtitleedit-rtl-fixed\ost\apply-player-diagnostics.ps1
 
+      - name: Resolve bundled mpv independently of launch directory
+        shell: pwsh
+        working-directory: subtitleedit
+        run: python ../custom/tools/subtitleedit-rtl-fixed/ost/apply-bundled-mpv.py
+
       - name: Integrate professional encoder controls
         working-directory: subtitleedit
         run: python ../custom/tools/subtitleedit-rtl-fixed/encoder/apply.py .
@@ -229,6 +234,14 @@ jobs:
           if (-not $m.Success) { throw 'Could not locate libmpv URL.' }
           Invoke-WebRequest -Uri $m.Value -OutFile 'libmpv2-win64.zip'
           Expand-Archive 'libmpv2-win64.zip' 'libmpv-temp' -Force
+
+      - name: Test bundled mpv from an unrelated working directory
+        shell: pwsh
+        working-directory: subtitleedit
+        run: |
+          Copy-Item 'libmpv-temp/*' 'tests/UI/bin/Release/net10.0/' -Recurse -Force
+          dotnet test tests/UI/UITests.csproj -c Release --no-build --filter 'FullyQualifiedName~BundledMpvTests' --logger 'console;verbosity=normal'
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled native mpv launch-directory regression failed.' }
 
       - name: Bundle official GitHub authentication helper
         shell: pwsh
