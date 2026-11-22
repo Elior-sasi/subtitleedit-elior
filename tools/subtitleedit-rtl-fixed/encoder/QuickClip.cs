@@ -22,6 +22,24 @@ public partial class BurnInViewModel
         _clipInMs = _clipOutMs = null;
         ClipChanged("");
     }
+    internal void StepPreviewFrame(bool forward)
+    {
+        var player = VideoPlayerControl?.VideoPlayer;
+        if (player == null || IsGenerating || IsBatchMode || _quickStarting ||
+            string.IsNullOrEmpty(player.FileName) || player.Duration <= 0) return;
+        // Use decoded-frame navigation, never an assumed 25 fps time increment.
+        if (player is Nikse.SubtitleEdit.Logic.VideoPlayers.LibMpvDynamic.LibMpvDynamicPlayer mpv)
+        {
+            player.Pause();
+            if (forward) mpv.StepOneFrameForward(); else mpv.StepOneFrameBack();
+        }
+        else if (player is Nikse.SubtitleEdit.Logic.VideoPlayers.Ffmpeg.FfmpegPlayer ffmpeg)
+        {
+            player.Pause();
+            if (forward) ffmpeg.StepOneFrameForward(); else ffmpeg.StepOneFrameBack();
+        }
+        else ClipChanged(QueueLabel("This preview player does not support frame stepping.", "נגן התצוגה הזה אינו תומך במעבר לפי פריימים."));
+    }
     internal void MarkPreview(bool start)
     {
         var player = VideoPlayerControl?.VideoPlayer;

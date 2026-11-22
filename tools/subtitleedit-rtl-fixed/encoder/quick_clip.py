@@ -27,6 +27,19 @@ def apply(window,vm):
             controls.Children.Add(b);
             return b;
         }
+        var frames = new StackPanel { Orientation=Orientation.Horizontal, Spacing=4,
+            FlowDirection=Avalonia.Media.FlowDirection.LeftToRight };
+        Button FrameButton(string symbol, string en, string he, bool forward)
+        {
+            var b=new Button {Content=symbol, Name=forward ? "EncoderFrameForward" : "EncoderFrameBack"};
+            var caption=BurnInViewModel.QueueLabel(en,he);
+            AutomationProperties.SetName(b,caption); ToolTip.SetTip(b,caption);
+            b.Click+=(_,_)=>vm.StepPreviewFrame(forward);
+            frames.Children.Add(b);return b;
+        }
+        FrameButton("◀|", "Previous frame", "פריים אחד אחורה", false);
+        FrameButton("|▶", "Next frame", "פריים אחד קדימה", true);
+        controls.Children.Add(frames);
         ActionButton("Mark In (I)", "סמן התחלה (I)", ()=>vm.MarkPreview(true));
         ActionButton("Mark Out (O)", "סמן סוף (O)", ()=>vm.MarkPreview(false));
         var export=new Button {Content=BurnInViewModel.QueueLabel("Cut and export","חתוך וייצא"),IsEnabled=vm.ClipReady};

@@ -54,6 +54,31 @@ public class EncoderMuxTests
         } finally {Directory.Delete(dir,true);}
     }
 
+    [Avalonia.Headless.XUnit.AvaloniaFact]
+    public void EncoderFrameButtonsArePhysicalLeftRightAndDoNotEditClipMarksWithoutMedia()
+    {
+        var vm = new BurnInViewModel(new FolderHelper(), new FileHelper(), new Nikse.SubtitleEdit.Logic.WindowService(new NoServices()));
+        vm.IsBatchMode = false;
+        vm.MarkClip(true, 1, 10); vm.MarkClip(false, 3, 10);
+        string marks = vm.ClipHint;
+        var preview = (Avalonia.Controls.Control)typeof(BurnInWindow)
+            .GetMethod("MakePreview", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
+            .Invoke(null, new object[] { vm })!;
+        var buttons = Avalonia.LogicalTree.LogicalExtensions.GetLogicalDescendants(preview)
+            .OfType<Avalonia.Controls.Button>().Where(b => b.Name is "EncoderFrameBack" or "EncoderFrameForward").ToArray();
+        Assert.Equal(2, buttons.Length);
+        Assert.Equal("EncoderFrameBack", buttons[0].Name);
+        Assert.Equal("EncoderFrameForward", buttons[1].Name);
+        Assert.Equal(Avalonia.Media.FlowDirection.LeftToRight, buttons[0].Parent!.GetValue(Avalonia.Controls.Control.FlowDirectionProperty));
+        foreach (var button in buttons)
+            button.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
+        Assert.Equal(marks, vm.ClipHint);
+        Assert.True(vm.ClipReady);
+        vm.IsGenerating = true; vm.StepPreviewFrame(true);
+        vm.IsGenerating = false; vm.IsBatchMode = true; vm.StepPreviewFrame(false);
+        Assert.Equal(marks, vm.ClipHint);
+    }
+
     private sealed class NoServices : System.IServiceProvider
     {
         public object? GetService(System.Type t) => null;
