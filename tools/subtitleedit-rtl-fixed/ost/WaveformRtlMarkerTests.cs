@@ -276,6 +276,13 @@ public partial class OstTableTests
         var skiaMethod = typeof(SkiaWaveformRenderer).GetMethod("DrawParagraphTextLines", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var renderer = new SkiaWaveformRenderer();
         var cache = (SkiaTextCache)typeof(SkiaWaveformRenderer).GetField("_textCache", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(renderer)!;
+        // Beta 14 explicitly passes the original-track style through both rendering paths.
+        var classicHasOriginal = classicMethod.GetParameters()[4].ParameterType == typeof(bool);
+        var skiaHasBaseColor = skiaMethod.GetParameters()[6].ParameterType == typeof(SkiaSharp.SKColor);
+        void PaintClassic(AudioVisualizer visualizer, DrawingContext context, string text, double right) =>
+            classicMethod.Invoke(visualizer, classicHasOriginal
+                ? new object?[] { context, text, 10d, 14d, false, right }
+                : new object?[] { context, text, 10d, 14d, right });
         var legacyLosses = 0;
         byte[] Capture(Action<DrawingContext> paint)
         {
@@ -306,7 +313,7 @@ public partial class OstTableTests
                     ? new[] { 810.0, 810.25, 810.75 } : new[] { 410.0, 410.25, 410.75 }))
                 {
                     var clip = new Rect(10, 0, right - 10, 130);
-                    void Classic(DrawingContext context) => classicMethod.Invoke(av, new object?[] { context, raw, 10d, 14d, right });
+                    void Classic(DrawingContext context) => PaintClassic(av, context, raw, right);
                     var full = Capture(Classic);
                     var clipped = Capture(context => { using (context.PushClip(clip)) Classic(context); });
                     Assert.True(full.SequenceEqual(clipped), $"Classic edge glyph clipped: {font}/{size}/{raw}/{unwrap}/{right}");
@@ -325,7 +332,9 @@ public partial class OstTableTests
                         using var bitmap = new SkiaSharp.SKBitmap(850, 130);
                         using var canvas = new SkiaSharp.SKCanvas(bitmap); canvas.Clear(SkiaSharp.SKColors.Black);
                         if (useClip) canvas.ClipRect(new SkiaSharp.SKRect(10, 0, (float)right, 130));
-                        skiaMethod.Invoke(renderer, new object?[] { canvas, f, p, 10f, 14f, (byte)255, (float)right });
+                        skiaMethod.Invoke(renderer, skiaHasBaseColor
+                            ? new object?[] { canvas, f, p, 10f, 14f, (byte)255, f.TextColor, (float)right }
+                            : new object?[] { canvas, f, p, 10f, 14f, (byte)255, (float)right });
                         canvas.Flush(); return bitmap.Bytes;
                     }
                     Assert.True(Skia(false).SequenceEqual(Skia(true)), $"Skia edge glyph clipped: {font}/{size}/{raw}/{unwrap}/{right}");
@@ -333,7 +342,7 @@ public partial class OstTableTests
             }
             Assert.True(legacyLosses > 0, "The glyph fixture must reproduce actual clipping with the previous advance-only origin.");
             var finalAv = new AudioVisualizer();
-            probe.Paint = context => { using (context.PushClip(new Rect(10, 0, 400.25, 130))) classicMethod.Invoke(finalAv, new object?[] { context, "תחזיקו חזק.\nאני רואה Naruto ב־12:30.", 10d, 14d, 410.25d }); };
+            probe.Paint = context => { using (context.PushClip(new Rect(10, 0, 400.25, 130))) PaintClassic(finalAv, context, "תחזיקו חזק.\nאני רואה Naruto ב־12:30.", 410.25d); };
             probe.InvalidateVisual();
             SaveWaveformFixture(window, "Waveform-RTL-Complete-Edge-Glyph");
         }
