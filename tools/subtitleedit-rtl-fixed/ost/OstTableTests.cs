@@ -709,6 +709,54 @@ public partial class OstTableTests
     }
 
     [AvaloniaFact]
+    public void SubtitleRecoveryRestoresTheMatchingOstSnapshotWithoutChangingTheOriginal()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var original = Path.Combine(dir, "original.srt");
+        var originalOst = Path.ChangeExtension(original, ".ostproject");
+        var backup = Path.Combine(dir, "2026-11-25_17-00-00_original.srt");
+        var view = new OstTableView(new List<SubEntry>(), "Test", true, original);
+        OstTableView? recovered = null;
+        try
+        {
+            var oldId = Guid.NewGuid();
+            const string lineText = "טקסט לשחזור";
+            const string time = "00:00:03,000";
+            view.SelectedRowsProvider = () => new() { new() { SourceId = oldId, StartTime = time, Text = lineText } };
+            view.AddMainSelection();
+            Assert.True(view.TrySave());
+            var snapshot = Assert.IsType<string>(view.CaptureRecoverySnapshot());
+            var subtitle = "1\n00:00:03,000 --> 00:00:04,000\n" + lineText + "\n";
+            Assert.True(Nikse.SubtitleEdit.Logic.AutoBackupService.WriteSubtitleRecoveryPair(backup, subtitle, snapshot));
+            Assert.False(Nikse.SubtitleEdit.Logic.AutoBackupService.WriteSubtitleRecoveryPair(backup, "wrong", "wrong"));
+            Assert.Equal(subtitle, File.ReadAllText(backup));
+            Assert.Equal(snapshot, File.ReadAllText(backup + ".ost-recovery"));
+
+            view.RemoveMainSelection();
+            Assert.True(view.TrySave());
+            var originalAfterEdit = File.ReadAllText(originalOst);
+            Assert.Null(view.CaptureRecoverySnapshot());
+
+            recovered = new OstTableView(new List<SubEntry>(), "Recovered", true, backup);
+            var restoredId = Guid.NewGuid();
+            recovered.SourceRowsProvider = () => new() { new() { SourceId = restoredId, StartTime = time, Text = lineText } };
+            recovered.SyncLinkedRows();
+            Assert.Contains(restoredId, recovered.LinkedIds());
+            Assert.DoesNotContain(oldId, recovered.LinkedIds());
+            Assert.True(recovered.TrySave());
+            Assert.Equal(originalAfterEdit, File.ReadAllText(originalOst));
+            Assert.Equal(snapshot, File.ReadAllText(backup + ".ost-recovery"));
+        }
+        finally
+        {
+            recovered?.TrySaveAndStop();
+            view.TrySaveAndStop();
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [AvaloniaFact]
     public void AddingMainSelectionUsesFreshTextWithoutDuplicates()
     {
         var view = MakeWindow();

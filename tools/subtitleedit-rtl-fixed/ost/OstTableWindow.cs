@@ -188,6 +188,7 @@ namespace Nikse.SubtitleEdit.Features.Tools.OstTable
             _txtSeason.Text = season; _txtEpisode.Text = episode; MarkDirty();
         }
         internal string ArchiveSnapshot() { SyncLinkedRows(); _gridOst.CommitEdit(); return SerializeState(BuildProjectState()); }
+        internal string? CaptureRecoverySnapshot() => _ostItems.Count == 0 ? null : ArchiveSnapshot();
         internal Task ExportWordAsync() => BtnExport_ClickAsync();
         internal Task SaveProjectAsync() => BtnSave_ClickAsync();
         internal Task OpenProjectAsync() => BtnLoad_ClickAsync();
@@ -301,9 +302,13 @@ namespace Nikse.SubtitleEdit.Features.Tools.OstTable
         private void TryAutoLoad()
         {
             string? path = GetSidecarPath();
-            if (path == null || !File.Exists(path)) return;
+            if (path == null) return;
+            // A restored subtitle uses its own path, never the source project's sidecar.
             try
             {
+                if (!File.Exists(path) && !string.IsNullOrEmpty(_subtitleFile))
+                    path = _subtitleFile + ".ost-recovery";
+                if (!File.Exists(path)) return;
                 var st = DeserializeState(File.ReadAllText(path, Encoding.UTF8));
                 if (st == null) return;
                 ApplyProjectState(st);

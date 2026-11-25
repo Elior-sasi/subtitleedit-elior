@@ -46,6 +46,12 @@ public partial class MainViewModel
         if (!IsEmpty && EnsureOstProject()) { RefreshOstMarkers(); MonitorCustomProject(); }
     }
 
+    // Called on the UI timer, alongside GetSaveSubtitle. Do not create an OST view just to back up.
+    internal string? CaptureOstRecoverySnapshot() =>
+        _ostViewGeneration == _ostDocumentGeneration && _ostSourceFile == _subtitleFileName
+            ? _ostView?.CaptureRecoverySnapshot()
+            : null;
+
     internal bool SaveOstBeforeClosing() => _ostView?.TrySave() ?? true;
 
     private List<SubEntry> SourceOstRows(IEnumerable<SubtitleLineViewModel> rows) => rows
