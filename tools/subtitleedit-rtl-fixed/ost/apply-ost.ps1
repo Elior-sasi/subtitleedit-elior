@@ -419,13 +419,16 @@ ReplaceSettingsAnchor '        var oldSettngsSerialized = SettingsChangeSnapshot
         var oldSettngsSerialized = SettingsChangeSnapshot.Take();
         _customPlayerSettingsBaseline = oldSettngsSerialized;
 '@
-ReplaceSettingsAnchor "    public void ApplySettings()`n    {" @'
-    public void ApplySettings()
+$usesSavedLayoutParameter = $text.Contains('    public void ApplySettings(bool useSavedLayoutAndZoom = false)')
+$applySettingsSignature = if ($usesSavedLayoutParameter) { '    public void ApplySettings(bool useSavedLayoutAndZoom = false)' } else { '    public void ApplySettings()' }
+$layoutGuard = if ($usesSavedLayoutParameter) { 'useSavedLayoutAndZoom' } else { '_applyLayoutAndZoomFromSettings' }
+ReplaceSettingsAnchor "$applySettingsSignature`n    {" @"
+$applySettingsSignature
     {
         var currentPlayerSettings = SettingsChangeSnapshot.Take();
-        var preserveCustomPlayer = !_applyLayoutAndZoomFromSettings &&
+        var preserveCustomPlayer = !$layoutGuard &&
             CustomCanKeepPlayer(_customPlayerSettingsBaseline, currentPlayerSettings);
-'@
+"@
 ReplaceSettingsAnchor "            InitializeLibMpv();`n            InitializeFfmpeg();" @'
             if (!preserveCustomPlayer)
             {
@@ -441,14 +444,18 @@ ReplaceSettingsAnchor "        RefreshGridColumnsFromSettings();`n        if (Ar
         }
         else if (AreVideoControlsUndocked)
 '@
-$start = $text.IndexOf('    public void ApplySettings()')
+$start = $text.IndexOf($applySettingsSignature)
 $end = $text.IndexOf('        UpdateVideoOffsetStatus();', $start)
 if ($start -lt 0 -or $end -lt 0) { throw 'ApplySettings scope missing.' }
 $part = $text.Substring($start, $end - $start)
 $needle = "        if (vp != null)`n        {"
 if (([regex]::Matches($part, [regex]::Escape($needle))).Count -ne 1) { throw 'Player refresh anchor changed.' }
 $part = $part.Replace($needle, "        if (vp != null && !preserveCustomPlayer)`n        {")
-$part = $part.Replace('        _applyLayoutAndZoomFromSettings = false;', "        _applyLayoutAndZoomFromSettings = false;`n        _customPlayerSettingsBaseline = currentPlayerSettings;")
+if ($usesSavedLayoutParameter) {
+    $part += "        _customPlayerSettingsBaseline = currentPlayerSettings;`n"
+} else {
+    $part = $part.Replace('        _applyLayoutAndZoomFromSettings = false;', "        _applyLayoutAndZoomFromSettings = false;`n        _customPlayerSettingsBaseline = currentPlayerSettings;")
+}
 $text = $text.Substring(0, $start) + $part + $text.Substring($end)
 Set-Content $path $text -Encoding utf8
 
