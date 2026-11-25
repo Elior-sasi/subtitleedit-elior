@@ -24,7 +24,13 @@ patch('src/ui/Features/Options/Settings/SettingsPage.cs', [
      '            MakeCheckboxSetting(Se.Language.Options.Settings.WaveformUseSkiaRenderer, nameof(_vm.WaveformUseSkiaRenderer)),\n            new SettingsItem("מיקום תגית RTL", () => Nikse.SubtitleEdit.Controls.AudioVisualizerControl.WaveformRtlMarker.CreatePositionSetting()),'),
 ])
 
-patch(target / 'AudioVisualizer.cs', [
+# Beta 14 adds an optional style for the original subtitle track.
+classic_file = target / 'AudioVisualizer.cs'
+classic_signature = '    private void DrawParagraphText(DrawingContext context, string text, double x, double y'
+classic_original = classic_signature + ', bool original = false)' in classic_file.read_text(encoding='utf-8-sig')
+classic_style = ', bool original = false' if classic_original else ''
+
+patch(classic_file, [
     ('    internal (List<string> Lines, string Unwrapped, bool RightToLeft) GetPreparedParagraphText(string rawText)', '''    private sealed class CustomWaveformInkBounds
     {
         public Rect Bounds;
@@ -61,9 +67,9 @@ patch(target / 'AudioVisualizer.cs', [
         var clipHeight = showMarker && bottom ? Math.Min(contentHeight, markerY - contentTop - 4) : contentHeight;
         var textBounds = new Rect(layout.Left, contentTop, Math.Max(0, layout.Right - layout.Left), Math.Max(0, clipHeight));'''),
     ('                DrawParagraphText(context, text, currentRegionLeft + 3, contentTop + 14);',
-     '                DrawParagraphText(context, text, layout.Left, contentTop + 14, layout.Right);'),
-    ('    private void DrawParagraphText(DrawingContext context, string text, double x, double y)',
-     '    private void DrawParagraphText(DrawingContext context, string text, double x, double y, double? rightEdge = null)'),
+     '                DrawParagraphText(context, text, layout.Left, contentTop + 14, rightEdge: layout.Right);'),
+    (classic_signature + classic_style + ')',
+     classic_signature + classic_style + ', double? rightEdge = null)'),
     ('        var prepared = GetPreparedParagraphText(text);\n        if (Se.Settings.Waveform.WaveformUnwrapText)',
      '        var prepared = GetPreparedParagraphText(text);\n        double Origin(double width) => rightEdge.HasValue ? WaveformRtlMarker.TextOrigin(x, rightEdge.Value, width, prepared.RightToLeft) : x;\n        double InkOrigin(FormattedText value)\n        {\n            if (!rightEdge.HasValue) return x;\n            var ink = GetCustomWaveformInkBounds(value);\n            return WaveformRtlMarker.InkOrigin(x, rightEdge.Value, value.Width, prepared.RightToLeft, ink.Left - 1, ink.Right + 1);\n        }\n        if (Se.Settings.Waveform.WaveformUnwrapText)'),
     ('new Rect(x, y, unwrapped.Width, unwrapped.Height)', 'new Rect(Origin(unwrapped.Width), y, unwrapped.Width, unwrapped.Height)'),
@@ -96,7 +102,23 @@ patch(target / 'SkiaAudioVisualizer.cs', [
     ('    public bool IsSelected;\n    public IReadOnlyList<string> Lines;', '    public bool IsSelected;\n    public bool HasRtlControls;\n    public IReadOnlyList<string> Lines;'),
 ])
 
-patch(target / 'SkiaWaveformRenderer.cs', [
+# Keep the original track's explicit color when the upstream overload exists.
+skia_file = target / 'SkiaWaveformRenderer.cs'
+skia_signature = 'private void DrawParagraphText(SKCanvas canvas, SkiaWaveformFrame f, SkiaParagraph p, float x, float y, byte alpha'
+skia_lines_signature = skia_signature.replace('DrawParagraphText(', 'DrawParagraphTextLines(')
+skia_original = skia_signature + ', SKColor baseColor)' in skia_file.read_text(encoding='utf-8-sig')
+skia_style = ', SKColor baseColor' if skia_original else ''
+skia_color_arg = ', baseColor' if skia_original else ''
+skia_color = 'baseColor' if skia_original else 'f.TextColor'
+skia_color_expression = f'        var color = {skia_color}.WithAlpha((byte)({skia_color}.Alpha * alpha / 255));'
+skia_forward_right_edge = [
+    ('DrawParagraphText(canvas, f, p, x, y, alpha, f.TextColor);',
+     'DrawParagraphText(canvas, f, p, x, y, alpha, f.TextColor, rightEdge);'),
+    (skia_signature + skia_style + ')',
+     skia_signature + skia_style + ', float? rightEdge = null)'),
+] if skia_original else []
+
+patch(skia_file, [
     ('        public float Width;\n        public float Baseline;', '        public float Width;\n        public float InkLeft;\n        public float InkRight;\n        public float Baseline;'),
     ('\n        AppendRun(builder, font, result);', '\n        AppendRun(builder, font, result, shaped);'),
     ('\n                AppendRun(builder, font, result);', '\n                AppendRun(builder, font, result, shaped);'),
@@ -135,13 +157,14 @@ patch(target / 'SkiaWaveformRenderer.cs', [
             canvas.Save();
             canvas.ClipRect(SKRect.Create((float)layout.Left, 0, (float)Math.Max(0, layout.Right - layout.Left), Math.Max(0, clipHeight)));
             DrawParagraphText(canvas, f, p, (float)layout.Left, TimeLineTextOffset, 255, (float)layout.Right);'''),
-    ('private void DrawParagraphText(SKCanvas canvas, SkiaWaveformFrame f, SkiaParagraph p, float x, float y, byte alpha)',
-     'private void DrawParagraphText(SKCanvas canvas, SkiaWaveformFrame f, SkiaParagraph p, float x, float y, byte alpha, float? rightEdge = null)'),
-    ('DrawParagraphTextLines(canvas, f, p, x, y, alpha);', 'DrawParagraphTextLines(canvas, f, p, x, y, alpha, rightEdge);'),
-    ('private void DrawParagraphTextLines(SKCanvas canvas, SkiaWaveformFrame f, SkiaParagraph p, float x, float y, byte alpha)',
-     'private void DrawParagraphTextLines(SKCanvas canvas, SkiaWaveformFrame f, SkiaParagraph p, float x, float y, byte alpha, float? rightEdge = null)'),
-    ('        var color = f.TextColor.WithAlpha((byte)(f.TextColor.Alpha * alpha / 255));',
-     '        var color = f.TextColor.WithAlpha((byte)(f.TextColor.Alpha * alpha / 255));\n        float Origin(SkiaTextCache.ShapedText value) => rightEdge.HasValue ? (float)WaveformRtlMarker.InkOrigin(x, rightEdge.Value, value.Width, p.RightToLeft, value.InkLeft, value.InkRight) : x;'),
+    (skia_signature + ')', skia_signature + ', float? rightEdge = null)'),
+    *skia_forward_right_edge,
+    ('DrawParagraphTextLines(canvas, f, p, x, y, alpha' + skia_color_arg + ');',
+     'DrawParagraphTextLines(canvas, f, p, x, y, alpha' + skia_color_arg + ', rightEdge);'),
+    (skia_lines_signature + skia_style + ')',
+     skia_lines_signature + skia_style + ', float? rightEdge = null)'),
+    (skia_color_expression,
+     skia_color_expression + '\n        float Origin(SkiaTextCache.ShapedText value) => rightEdge.HasValue ? (float)WaveformRtlMarker.InkOrigin(x, rightEdge.Value, value.Width, p.RightToLeft, value.InkLeft, value.InkRight) : x;'),
     ('            DrawText(canvas, _textCache.Get(p.Unwrapped, f.FontSize, p.RightToLeft), x, y, color);',
      '            var unwrapped = _textCache.Get(p.Unwrapped, f.FontSize, p.RightToLeft);\n            DrawText(canvas, unwrapped, Origin(unwrapped), y, color);'),
     ('            DrawText(canvas, text, x, y, color);', '            DrawText(canvas, text, Origin(text), y, color);'),
