@@ -33,6 +33,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
 Source: "{#Payload}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "Settings*.json,*.srt,*.ass,*.ssa,*.vtt,*.ostproject,*.sework.json,*.dpapi,custom-installed.json,\CloudMfa\*"
+Source: "file-icons\*.ico"; DestDir: "{app}\file-icons"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Subtitle Edit - Elior"; Filename: "{app}\SubtitleEdit.exe"; WorkingDir: "{app}"; AppUserModelID: "Elior.SubtitleEdit.Hebrew"
@@ -56,28 +57,32 @@ Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.Subtitle\DefaultIcon"; 
 Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.Subtitle\shell\open\command"; ValueType: string; ValueData: """{app}\SubtitleEdit.exe"" ""%1"""
 Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.SRT"; ValueType: string; ValueData: "SubRip subtitle file"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.SRT"; ValueType: string; ValueName: "AppUserModelID"; ValueData: "Elior.SubtitleEdit.Hebrew"
-Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.SRT\DefaultIcon"; ValueType: string; ValueData: "{app}\SubtitleEdit.exe,0"
+Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.SRT\DefaultIcon"; ValueType: string; ValueData: "{app}\file-icons\srt.ico,0"
 Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.SRT\shell\open\command"; ValueType: string; ValueData: """{app}\SubtitleEdit.exe"" ""%1"""
 Root: HKCU; Subkey: "Software\Classes\.srt\OpenWithProgids"; ValueType: string; ValueName: "Elior.SubtitleEdit.SRT"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\Classes\.srt\OpenWithProgids"; ValueType: none; ValueName: "Elior.SubtitleEdit.Subtitle"; Flags: deletevalue
 Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.ASS"; ValueType: string; ValueData: "Advanced SubStation Alpha subtitle file"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.ASS"; ValueType: string; ValueName: "AppUserModelID"; ValueData: "Elior.SubtitleEdit.Hebrew"
-Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.ASS\DefaultIcon"; ValueType: string; ValueData: "{app}\SubtitleEdit.exe,0"
+Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.ASS\DefaultIcon"; ValueType: string; ValueData: "{app}\file-icons\ass.ico,0"
 Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.ASS\shell\open\command"; ValueType: string; ValueData: """{app}\SubtitleEdit.exe"" ""%1"""
 Root: HKCU; Subkey: "Software\Classes\.ass\OpenWithProgids"; ValueType: string; ValueName: "Elior.SubtitleEdit.ASS"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\Classes\.ass\OpenWithProgids"; ValueType: none; ValueName: "Elior.SubtitleEdit.Subtitle"; Flags: deletevalue
 Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.SSA"; ValueType: string; ValueData: "SubStation Alpha subtitle file"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.SSA"; ValueType: string; ValueName: "AppUserModelID"; ValueData: "Elior.SubtitleEdit.Hebrew"
-Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.SSA\DefaultIcon"; ValueType: string; ValueData: "{app}\SubtitleEdit.exe,0"
+Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.SSA\DefaultIcon"; ValueType: string; ValueData: "{app}\file-icons\ssa.ico,0"
 Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.SSA\shell\open\command"; ValueType: string; ValueData: """{app}\SubtitleEdit.exe"" ""%1"""
 Root: HKCU; Subkey: "Software\Classes\.ssa\OpenWithProgids"; ValueType: string; ValueName: "Elior.SubtitleEdit.SSA"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\Classes\.ssa\OpenWithProgids"; ValueType: none; ValueName: "Elior.SubtitleEdit.Subtitle"; Flags: deletevalue
 Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.VTT"; ValueType: string; ValueData: "WebVTT subtitle file"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.VTT"; ValueType: string; ValueName: "AppUserModelID"; ValueData: "Elior.SubtitleEdit.Hebrew"
-Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.VTT\DefaultIcon"; ValueType: string; ValueData: "{app}\SubtitleEdit.exe,0"
+Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.VTT\DefaultIcon"; ValueType: string; ValueData: "{app}\file-icons\vtt.ico,0"
 Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.VTT\shell\open\command"; ValueType: string; ValueData: """{app}\SubtitleEdit.exe"" ""%1"""
 Root: HKCU; Subkey: "Software\Classes\.vtt\OpenWithProgids"; ValueType: string; ValueName: "Elior.SubtitleEdit.VTT"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\Classes\.vtt\OpenWithProgids"; ValueType: none; ValueName: "Elior.SubtitleEdit.Subtitle"; Flags: deletevalue
+; OST metadata is a companion file; give it a type and icon, not an open verb.
+Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.OSTProject"; ValueType: string; ValueData: "Subtitle Edit OST project"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Elior.SubtitleEdit.OSTProject\DefaultIcon"; ValueType: string; ValueData: "{app}\file-icons\ost.ico,0"
+Root: HKCU; Subkey: "Software\Classes\.ostproject"; ValueType: string; ValueData: "Elior.SubtitleEdit.OSTProject"; Flags: createvalueifdoesntexist; Check: CanRegisterOstProjectType
 Root: HKCU; Subkey: "Software\Classes\AppUserModelId\Elior.SubtitleEdit.Hebrew"; ValueType: string; ValueName: "DisplayName"; ValueData: "Subtitle Edit — אליאור"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\AppUserModelId\Elior.SubtitleEdit.Hebrew"; ValueType: string; ValueName: "RelaunchCommand"; ValueData: """{app}\SubtitleEdit.exe"""
 Root: HKCU; Subkey: "Software\Classes\AppUserModelId\Elior.SubtitleEdit.Hebrew"; ValueType: string; ValueName: "RelaunchDisplayNameResource"; ValueData: "Subtitle Edit — אליאור"
@@ -88,6 +93,20 @@ Filename: "{app}\SubtitleEdit.exe"; Description: "פתח את הגרסה שלנ�
 [Code]
 var
   SourcePage: TInputDirWizardPage;
+function CanRegisterOstProjectType: Boolean;
+begin
+  Result := not RegValueExists(HKCU, 'Software\Classes\.ostproject', '') and
+    not RegValueExists(HKLM, 'Software\Classes\.ostproject', '') and
+    not RegKeyExists(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.ostproject\UserChoice');
+end;
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var Association: String;
+begin
+  if (CurUninstallStep = usUninstall) and
+     RegQueryStringValue(HKCU, 'Software\Classes\.ostproject', '', Association) and
+     (Association = 'Elior.SubtitleEdit.OSTProject') then
+    RegDeleteValue(HKCU, 'Software\Classes\.ostproject', '');
+end;
 procedure InitializeWizard;
 begin
   SourcePage := CreateInputDirPage(wpSelectDir, 'שמירת ההגדרות הקיימות',

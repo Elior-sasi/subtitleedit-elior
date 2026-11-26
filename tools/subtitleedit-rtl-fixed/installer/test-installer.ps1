@@ -32,13 +32,23 @@ foreach ($ext in $formats.Keys) {
     $choice = "HKCU:/Software/Microsoft/Windows/CurrentVersion/Explorer/FileExts/.$ext/UserChoice"
     $userChoices[$ext] = if (Test-Path $choice) { (Get-ItemProperty $choice | Select-Object ProgId, Hash | ConvertTo-Json -Compress) } else { 'absent' }
 }
-function Test-FileAssociations {
+Add-Type -AssemblyName System.Drawing
+function Test-TypeIcon($key, $extension) {
+    $iconPath = Join-Path $target "file-icons/$extension.ico"
+    if ((Get-Item "$key/DefaultIcon").GetValue('') -ne "$iconPath,0") { throw "Wrong icon for $extension" }
+    $icon = [System.Drawing.Icon]::new($iconPath)
+    try { if ($icon.Width -lt 16) { throw "Unreadable icon for $extension" } }
+    finally { $icon.Dispose() }
+    (Get-FileHash -LiteralPath $iconPath).Hash
+}
+function Test-FileAssociations($expectedOstAssociation) {
+    $iconHashes = @()
     foreach ($ext in $formats.Keys) {
         $id = 'Elior.SubtitleEdit.' + $ext.ToUpperInvariant()
         $key = "HKCU:/Software/Classes/$id"
         if ((Get-Item $key).GetValue('') -cne $formats[$ext]) { throw "Wrong friendly type for $ext" }
         if ((Get-Item $key).GetValue('AppUserModelID') -ne 'Elior.SubtitleEdit.Hebrew') { throw "Wrong shell identity for $ext" }
-        if ((Get-Item "$key/DefaultIcon").GetValue('') -ne "$target\SubtitleEdit.exe,0") { throw "Wrong icon for $ext" }
+        $iconHashes += Test-TypeIcon $key $ext
         if ((Get-Item "$key/shell/open/command").GetValue('') -ne ('"' + $target + '\SubtitleEdit.exe" "%1"')) { throw "Wrong quoted open command for $ext" }
         $caps = Get-Item 'HKCU:/Software/SubtitleEditElior/Capabilities/FileAssociations'
         if ($caps.GetValue(".$ext") -ne $id) { throw "Wrong capability for $ext" }
@@ -54,10 +64,16 @@ function Test-FileAssociations {
     }
     $legacy = Get-Item 'HKCU:/Software/Classes/Elior.SubtitleEdit.Subtitle/shell/open/command'
     if ($legacy.GetValue('') -ne ('"' + $target + '\SubtitleEdit.exe" "%1"')) { throw 'Existing legacy selections can no longer open subtitles.' }
-    Write-Host 'All four format names, shell commands, Open With migration and existing defaults verified.'
+    $ost = 'HKCU:/Software/Classes/Elior.SubtitleEdit.OSTProject'
+    if ((Get-Item $ost).GetValue('') -cne 'Subtitle Edit OST project') { throw 'Wrong OST friendly type.' }
+    if ((Get-Item 'HKCU:/Software/Classes/.ostproject').GetValue('') -ne $expectedOstAssociation) { throw 'Unexpected OST project association.' }
+    if (Test-Path "$ost/shell/open/command") { throw 'OST project should not launch the subtitle editor directly.' }
+    $iconHashes += Test-TypeIcon $ost 'ost'
+    if (@($iconHashes | Select-Object -Unique).Count -ne 5) { throw 'Formats are sharing icon assets.' }
+    Write-Host 'Distinct SRT, ASS, SSA, VTT and OST file types and icon assets verified. Existing subtitle defaults were preserved.'
 }
 Install
-Test-FileAssociations
+Test-FileAssociations 'Elior.SubtitleEdit.OSTProject'
 if (-not (Test-Path (Join-Path $target 'SubtitleEdit.exe'))) { throw 'Installed executable missing.' }
 if (-not (Test-Path (Join-Path $target 'custom-installed.json'))) { throw 'Installed data marker missing.' }
 if (-not (Test-Path (Join-Path $target 'custom-updater/gh.exe'))) { throw 'Private updater helper missing.' }
@@ -85,8 +101,9 @@ New-Item -ItemType Directory (Join-Path $data 'CloudMfa') -Force | Out-Null
 '{"ServiceUrl":"https://example.invalid","Language":"english_mfa"}' | Set-Content (Join-Path $data 'CloudMfa/config.json') -Encoding utf8
 [IO.File]::WriteAllBytes((Join-Path $data 'CloudMfa/token.dpapi'), [byte[]](1..32))
 $cloud = (Get-FileHash (Join-Path $data 'CloudMfa/config.json')).Hash + (Get-FileHash (Join-Path $data 'CloudMfa/token.dpapi')).Hash
+Set-Item 'HKCU:/Software/Classes/.ostproject' -Value 'Unrelated.OST.Application'
 Install
-Test-FileAssociations
+Test-FileAssociations 'Unrelated.OST.Application'
 if ((Get-FileHash (Join-Path $data 'Settings.json')).Hash -ne $existing) { throw 'Reinstallation replaced existing settings.' }
 if (((Get-FileHash (Join-Path $data 'CloudMfa/config.json')).Hash + (Get-FileHash (Join-Path $data 'CloudMfa/token.dpapi')).Hash) -ne $cloud) { throw 'Reinstallation changed cloud alignment settings or token.' }
 if (Test-Path (Join-Path $target 'CloudMfa')) { throw 'Cloud alignment data appeared in the program folder.' }
